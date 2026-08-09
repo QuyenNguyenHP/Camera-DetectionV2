@@ -13,3 +13,4 @@ backend/data/people/*
 !backend/data/people/.gitkeep
 *.pt
 *.onnx
+*.tar
