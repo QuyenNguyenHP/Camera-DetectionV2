@@ -1,0 +1,18 @@
+services:
+  camera-detection:
+    image: ${CAMERA_IMAGE:-camera-detection:1.1.0-cpu}
+    container_name: camera-detection
+    restart: unless-stopped
+    env_file:
+      - runtime.env
+    environment:
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Duyquyen1301@}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - camera-detection-data:/app/backend/data
+
+volumes:
+  camera-detection-data:
+    name: camera-detection-data

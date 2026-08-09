@@ -5,9 +5,10 @@ import EnrollmentCameraBox from "../components/EnrollmentCameraBox.jsx";
 import EnrollmentSidebar from "../components/EnrollmentSidebar.jsx";
 import Footer from "../components/Footer.jsx";
 import Header from "../components/Header.jsx";
+import UserManagementPanel from "../components/UserManagementPanel.jsx";
 import { captureVideoFrame } from "../utils/camera.js";
 
-export default function EnrollmentPage({ onNavigate }) {
+export default function EnrollmentPage({ user, onNavigate, onLogout }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
@@ -108,7 +109,7 @@ export default function EnrollmentPage({ onNavigate }) {
 
   return (
     <main>
-      <Header page="enrollment" onNavigate={onNavigate} />
+      <Header page="enrollment" user={user} onNavigate={onNavigate} onLogout={onLogout} />
       <section className="enrollment-hero">
         <p className="eyebrow"><UserRoundPlus size={14} /> Private identity registry</p>
         <h1>Enroll a known identity.</h1>
@@ -135,6 +136,7 @@ export default function EnrollmentPage({ onNavigate }) {
           onEnroll={enroll}
         />
       </section>
+      <UserManagementPanel />
       <Footer items={["LOCAL IDENTITY STORE", "CONSENT-BASED ENROLLMENT"]} />
     </main>
   );

@@ -1,6 +1,7 @@
 import { ArrowLeft, UserRoundPlus } from "lucide-react";
 
-export default function Navigator({ page, onNavigate }) {
+export default function Navigator({ page, user, onNavigate }) {
+  if (page === "scan" && user.role !== "admin") return null;
   const destination = page === "scan" ? "enrollment" : "scan";
 
   return (

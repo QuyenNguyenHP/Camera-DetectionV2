@@ -9,7 +9,7 @@ import { captureVideoFrame, getAvailableCameras } from "../utils/camera.js";
 
 const INITIAL_CLASSES = "person, car, backpack, cell phone";
 
-export default function ScanPage({ onNavigate }) {
+export default function ScanPage({ user, onNavigate, onLogout }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
@@ -179,7 +179,7 @@ export default function ScanPage({ onNavigate }) {
 
   return (
     <main>
-      <Header page="scan" onNavigate={onNavigate} />
+      <Header page="scan" user={user} onNavigate={onNavigate} onLogout={onLogout} />
       <section className="hero-copy">
         <div>
           <p className="eyebrow"><Sparkles size={14} /> DQ TECH</p>

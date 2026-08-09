@@ -98,7 +98,12 @@ class ObjectDetector:
             if classes != self._classes:
                 model.set_classes(list(classes))
                 self._classes = classes
-            result = model.predict(image, conf=settings.confidence, verbose=False)[0]
+            result = model.predict(
+                image,
+                conf=settings.confidence,
+                device=settings.yolo_device,
+                verbose=False,
+            )[0]
 
         names = result.names
         height, width = image.shape[:2]

@@ -1,4 +1,23 @@
+import numpy as np
+
 from vision_app.detector import ObjectDetector
+
+
+class _EmptyResult:
+    names = {}
+    boxes = []
+
+
+class _FakeModel:
+    def __init__(self):
+        self.predict_options = {}
+
+    def set_classes(self, _classes):
+        pass
+
+    def predict(self, _image, **options):
+        self.predict_options = options
+        return [_EmptyResult()]
 
 
 def test_object_tracker_keeps_id_for_overlapping_box():
@@ -22,3 +41,12 @@ def test_object_tracker_does_not_mix_labels():
 
     assert person[0]["trackId"] != car[0]["trackId"]
 
+
+def test_detection_explicitly_uses_cpu(monkeypatch):
+    detector = ObjectDetector()
+    model = _FakeModel()
+    monkeypatch.setattr(detector, "_load", lambda: model)
+
+    detector.detect(np.zeros((8, 8, 3), dtype="uint8"), ["person"])
+
+    assert model.predict_options["device"] == "cpu"

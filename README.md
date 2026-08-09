@@ -21,10 +21,14 @@
 - Liệt kê và chuyển đổi giữa nhiều camera trên cùng thiết bị.
 - Phân tích một khung hình hoặc quét liên tục.
 - Đăng ký khuôn mặt mới trên trang Identity Enrollment riêng.
+- Trang Login là điểm vào mặc định; người dùng phải đăng nhập trước khi Scan.
+- Phân quyền `user` và `admin`; chỉ admin được đăng ký khuôn mặt và tạo tài khoản.
 - So khớp khuôn mặt với dữ liệu đã đăng ký.
 - Trả kết quả từ backend dưới dạng JSON và vẽ khung nhận diện trên frontend.
 - Lưu vector khuôn mặt trong `backend/data/faces.json` và ảnh đăng ký trong
   `backend/data/people/<tên người>/`.
+- Lưu tài khoản và session trong SQLite `backend/data/users.db`; mật khẩu được
+  băm bằng Argon2id và không lưu dạng nguyên bản.
 
 ## 2. Cấu trúc dự án
 
@@ -33,7 +37,7 @@ Camera-Detection/
 ├── frontend/
 │   ├── src/
 │   │   ├── main.jsx         Entry point và điều hướng giữa Scan/Enrollment
-│   │   ├── pages/           Logic cho trang Scan và Enrollment
+│   │   ├── pages/           Logic cho trang Login, Scan và Enrollment
 │   │   ├── components/      Header, navigator, camera box, footer và sidebar
 │   │   ├── utils/           Tiện ích camera dùng chung
 │   │   ├── api.js           Gọi trực tiếp FastAPI
@@ -44,6 +48,7 @@ Camera-Detection/
 │   ├── app.py               Khởi chạy bằng python3 app.py
 │   ├── vision_app/
 │   │   ├── main.py          API FastAPI
+│   │   ├── auth.py          SQLite users, Argon2id và server-side sessions
 │   │   ├── detector.py      YOLO-World
 │   │   ├── faces.py         Đăng ký và nhận diện khuôn mặt
 │   │   ├── image_utils.py   Đọc và kiểm tra ảnh
@@ -59,8 +64,9 @@ Camera-Detection/
 └── README.md
 ```
 
-Frontend gọi trực tiếp backend tại `http://localhost:8000`. Không có Node API
-gateway và dự án không sử dụng Docker.
+Trong chế độ development, frontend gọi trực tiếp backend tại
+`http://localhost:8000`. Không có Node API gateway. Hướng dẫn Docker portable
+nằm trong `docker_camera_detection/README.md`.
 
 ## 3. Yêu cầu hệ thống
 
@@ -188,12 +194,15 @@ Tạo file cấu hình từ file mẫu:
 ```bash
 cd /home/dq/Camera-Detection
 cp backend/.env.example backend/.env
+chmod 600 backend/.env
 ```
 
-Nội dung mặc định:
+Mở `backend/.env` và đặt mật khẩu mạnh cho admin đầu tiên. Không đặt mật khẩu
+thật trong `.env.example` và không commit file `.env`:
 
 ```env
 YOLO_MODEL=yolov8s-worldv2.pt
+YOLO_DEVICE=cpu
 DETECTION_CONFIDENCE=0.30
 FACE_STORE=data/faces.json
 FACE_PHOTO_DIR=data/people
@@ -208,7 +217,18 @@ MAX_UPLOAD_BYTES=10485760
 BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8000
 BACKEND_RELOAD=true
+AUTH_DATABASE=data/users.db
+AUTH_SESSION_HOURS=12
+AUTH_COOKIE_NAME=camera_session
+AUTH_COOKIE_SECURE=false
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=MAT_KHAU_MANH_TOI_THIEU_12_KY_TU
 ```
+
+`AUTH_COOKIE_SECURE=false` chỉ dành cho development bằng
+`http://localhost`. Khi triển khai qua domain/HTTPS, phải đổi thành `true`.
+Admin ban đầu chỉ được tạo khi database chưa có tài khoản. Sau lần tạo đầu tiên,
+đổi `INITIAL_ADMIN_PASSWORD` không đổi mật khẩu trong database.
 
 | Biến | Ý nghĩa |
 |---|---|
@@ -227,6 +247,12 @@ BACKEND_RELOAD=true
 | `BACKEND_HOST` | Địa chỉ backend lắng nghe, mặc định chỉ trên máy hiện tại |
 | `BACKEND_PORT` | Cổng backend, mặc định `8000` |
 | `BACKEND_RELOAD` | Tự khởi động lại khi sửa code trong môi trường phát triển |
+| `AUTH_DATABASE` | SQLite lưu tài khoản và session, mặc định `data/users.db` |
+| `AUTH_SESSION_HOURS` | Thời hạn đăng nhập, mặc định 12 giờ |
+| `AUTH_COOKIE_NAME` | Tên session cookie; development dùng `camera_session` |
+| `AUTH_COOKIE_SECURE` | `false` cho localhost HTTP; `true` cho production HTTPS |
+| `INITIAL_ADMIN_USERNAME` | Tên admin được tạo khi database còn trống |
+| `INITIAL_ADMIN_PASSWORD` | Mật khẩu admin đầu tiên, tối thiểu 12 ký tự |
 
 ## 8. Tải các model
 
@@ -277,9 +303,11 @@ Sau khi model đã được tải, chức năng nhận diện có thể chạy m
 
 ```bash
 cd /home/dq/Camera-Detection/backend
-source .venv/bin/activate
 python3 app.py
 ```
+
+`app.py` tự chuyển sang Python trong `backend/.venv`, nên không bắt buộc chạy
+`source .venv/bin/activate` trước. Backend đọc cấu hình từ `backend/.env`.
 
 Địa chỉ backend:
 
@@ -299,9 +327,25 @@ Kết quả `/health` khi backend hoạt động:
 
 ### Terminal 2 — Frontend
 
+Tạo file môi trường frontend trong lần đầu:
+
 ```bash
 cd /home/dq/Camera-Detection
-npm --prefix frontend run dev
+cp frontend/.env.example frontend/.env
+```
+
+Nội dung phải là:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+Sau đó chạy:
+
+```bash
+cd /home/dq/Camera-Detection/frontend
+npm ci
+npm run dev
 ```
 
 Mở trình duyệt tại:
@@ -310,6 +354,17 @@ Mở trình duyệt tại:
 http://localhost:5173
 ```
 
+Trang Login sẽ xuất hiện trước. Đăng nhập bằng:
+
+```text
+Username: admin
+Password: giá trị INITIAL_ADMIN_PASSWORD trong backend/.env
+```
+
+Sau khi đăng nhập bằng admin, mở **Identity enrollment → User management** để
+tạo tài khoản `user` hoặc `admin`. Tài khoản `user` chỉ được Scan; tài khoản
+`admin` được Scan, đăng ký khuôn mặt và tạo người dùng mới.
+
 Trình duyệt sẽ yêu cầu quyền sử dụng camera. Nếu không cấp quyền, chức năng tải
 ảnh lên vẫn hoạt động. Sau khi cấp quyền và mở camera lần đầu, dùng danh sách
 **Camera mặc định** bên dưới khung hình để chọn webcam khác. Tên thiết bị chỉ có
@@ -317,11 +372,11 @@ thể xuất hiện sau khi trình duyệt đã được cấp quyền camera.
 
 ## 10. Chạy toàn bộ dự án bằng một lệnh
 
-Kích hoạt môi trường Python trước, sau đó chạy từ thư mục gốc:
+Sau khi đã tạo `backend/.env`, `frontend/.env` và cài dependencies, chạy từ thư
+mục gốc:
 
 ```bash
 cd /home/dq/Camera-Detection
-source backend/.venv/bin/activate
 npm run dev
 ```
 
@@ -334,39 +389,43 @@ Dừng cả hai bằng `Ctrl+C`.
 
 ## 11. Chạy trên máy khác trong cùng mạng LAN
 
-Backend cần lắng nghe trên mọi địa chỉ mạng. Sửa `backend/.env`:
+Không dùng Vite development server và HTTP thô để triển khai cho máy khác.
+Trình duyệt chỉ cho phép camera trên `localhost` hoặc HTTPS; đồng thời production
+phải dùng session cookie `Secure`.
 
-```env
-BACKEND_HOST=0.0.0.0
+Để truy cập từ PC khác, build frontend/backend thành Docker image và đặt Caddy
+hoặc Apache2 HTTPS phía trước. Xem hướng dẫn từng bước tại:
+
+```text
+docker_camera_detection/README.md
 ```
 
-Sau đó vào thư mục `backend`, kích hoạt `.venv` và chạy lại bằng `python3 app.py`.
-
-Tạo `frontend/.env`:
-
-```env
-VITE_API_URL=http://DIA_CHI_IP_CUA_MAY_CHU:8000
-```
-
-Sau đó chạy frontend:
-
-```bash
-npm --prefix frontend run dev -- --host 0.0.0.0
-```
-
-Hiện tại backend chỉ cho phép nguồn frontend localhost qua CORS. Nếu truy cập từ
-máy khác, cần thêm địa chỉ frontend vào `allow_origins` trong
-`backend/vision_app/main.py`. Camera trên trình duyệt thường yêu cầu HTTPS, ngoại trừ
-`localhost`.
+Không public trực tiếp cổng backend `8000` hoặc container `8080`.
 
 ## 12. API backend
 
 | Phương thức | Endpoint | Chức năng |
 |---|---|---|
 | `GET` | `/health` | Kiểm tra backend và trạng thái model |
-| `GET` | `/faces` | Danh sách tên đã đăng ký |
-| `POST` | `/analyze` | Phân tích người, vật thể và khuôn mặt |
-| `POST` | `/faces/enroll` | Đăng ký một khuôn mặt |
+| `GET` | `/auth/status` | Kiểm tra hệ thống đã có admin hay chưa |
+| `POST` | `/auth/login` | Đăng nhập và nhận session cookie `HttpOnly` |
+| `POST` | `/auth/logout` | Xóa session hiện tại |
+| `GET` | `/auth/me` | Thông tin tài khoản đang đăng nhập |
+| `GET` | `/users` | Danh sách tài khoản — chỉ admin |
+| `POST` | `/users` | Tạo tài khoản `user/admin` — chỉ admin |
+| `GET` | `/faces` | Danh sách tên đã đăng ký — chỉ admin |
+| `POST` | `/analyze` | Phân tích ảnh — mọi tài khoản đã đăng nhập |
+| `POST` | `/faces/enroll` | Đăng ký khuôn mặt — chỉ admin |
+
+Ngoại trừ `/health`, `/auth/status` và `/auth/login`, API yêu cầu session cookie.
+Ví dụ đăng nhập bằng `curl` và lưu cookie tạm thời:
+
+```bash
+curl -c /tmp/camera-cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"MAT_KHAU_ADMIN"}' \
+  http://localhost:8000/auth/login
+```
 
 `POST /analyze` sử dụng `multipart/form-data`:
 
@@ -378,7 +437,8 @@ máy khác, cần thêm địa chỉ frontend vào `allow_origins` trong
 Ví dụ:
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -b /tmp/camera-cookies.txt \
+  -X POST http://localhost:8000/analyze \
   -F "image=@/duong-dan/anh.jpg" \
   -F "classes=person,car,backpack,cell phone" \
   -F "recognize_faces=true"
@@ -408,6 +468,44 @@ Các bài kiểm thử backend không tải model YOLO. Chỉ khi phân tích �
 model mới được nạp.
 
 ## 14. Xử lý lỗi thường gặp
+
+### Login báo chưa có administrator
+
+Kiểm tra `backend/.env` có mật khẩu admin tối thiểu 12 ký tự:
+
+```env
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=MAT_KHAU_MANH_TOI_THIEU_12_KY_TU
+```
+
+Dừng hoàn toàn backend bằng `Ctrl+C`, sau đó chạy lại:
+
+```bash
+cd /home/dq/Camera-Detection/backend
+python3 app.py
+```
+
+Kiểm tra trạng thái:
+
+```bash
+curl http://localhost:8000/auth/status
+```
+
+Nếu trả về `{"setupRequired":false}`, admin đã được tạo. Database development
+nằm tại `backend/data/users.db`.
+
+### Đăng nhập đúng nhưng lại quay về Login
+
+Khi dùng `http://localhost:5173`, kiểm tra:
+
+```env
+AUTH_COOKIE_NAME=camera_session
+AUTH_COOKIE_SECURE=false
+```
+
+Frontend phải được mở đúng bằng `http://localhost:5173`, và `frontend/.env` phải
+trỏ tới `http://localhost:8000`. Sau khi thay `.env`, khởi động lại cả backend và
+Vite. Production qua HTTPS phải đổi `AUTH_COOKIE_SECURE=true`.
 
 ### `node: command not found`
 
@@ -515,10 +613,11 @@ Nhận diện khuôn mặt là xử lý dữ liệu sinh trắc học. Chỉ đ�
 giới hạn quyền truy cập API, quy định thời gian lưu dữ liệu và tuân thủ pháp luật
 tại nơi triển khai.
 
-File `backend/data/faces.json` chỉ phù hợp cho bản MVP. Trước khi triển khai thật,
-cần bổ sung xác thực, HTTPS, mã hóa dữ liệu, giới hạn tần suất, nhật ký truy cập
-và API xóa đăng ký. Không sử dụng kết quả nhận diện làm căn cứ duy nhất cho quyết
-định có ảnh hưởng lớn đến con người.
+Ứng dụng đã có đăng nhập, Argon2id, session cookie và phân quyền `user/admin`.
+Trước khi thương mại hóa vẫn cần HTTPS, mã hóa/sao lưu dữ liệu, giới hạn tần
+suất đăng nhập và phân tích, nhật ký truy cập, đổi/reset mật khẩu, vô hiệu hóa tài
+khoản và API xóa đăng ký. Không sử dụng kết quả nhận diện làm căn cứ duy nhất cho
+quyết định có ảnh hưởng lớn đến con người.
 
 ## Tài liệu chính thức
 

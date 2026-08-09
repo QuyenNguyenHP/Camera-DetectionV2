@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import re
+from threading import Lock
 from time import perf_counter
+from typing import Annotated
 from uuid import uuid4
 
 import cv2
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
+from .auth import AuthStore, UserExistsError
 from .config import settings
 from .detector import detector
 from .faces import face_store
@@ -21,7 +25,68 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
+
+
+class LoginPayload(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class CreateUserPayload(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=12, max_length=128)
+    role: str = Field(pattern="^(user|admin)$")
+
+
+_auth_store: AuthStore | None = None
+_auth_store_lock = Lock()
+
+
+def get_auth_store() -> AuthStore:
+    global _auth_store
+    if _auth_store is None:
+        with _auth_store_lock:
+            if _auth_store is None:
+                _auth_store = AuthStore(
+                    settings.auth_database,
+                    max(settings.auth_session_hours, 1) * 60 * 60,
+                    settings.initial_admin_username,
+                    settings.initial_admin_password,
+                )
+    return _auth_store
+
+
+def current_user(
+    request: Request,
+    store: Annotated[AuthStore, Depends(get_auth_store)],
+) -> dict:
+    token = request.cookies.get(settings.auth_cookie_name, "")
+    user = store.user_for_session(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+def admin_user(user: Annotated[dict, Depends(current_user)]) -> dict:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return user
+
+
+AuthenticatedUser = Annotated[dict, Depends(current_user)]
+AdminUser = Annotated[dict, Depends(admin_user)]
+
+
+def _clean_username(value: str) -> str:
+    username = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,31}", username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be 3-32 characters using letters, numbers, dot, dash or underscore",
+        )
+    return username
 
 
 def parse_classes(value: str) -> list[str]:
@@ -50,8 +115,88 @@ async def health() -> dict:
     }
 
 
+@app.get("/auth/status")
+async def auth_status(store: Annotated[AuthStore, Depends(get_auth_store)]) -> dict:
+    return {"setupRequired": store.user_count() == 0}
+
+
+@app.post("/auth/login")
+async def login(
+    payload: LoginPayload,
+    response: Response,
+    store: Annotated[AuthStore, Depends(get_auth_store)],
+) -> dict:
+    if store.user_count() == 0:
+        raise HTTPException(
+            status_code=503,
+            detail="No administrator exists. Set INITIAL_ADMIN_PASSWORD and restart the service.",
+        )
+    username = payload.username.strip().lower()
+    user = store.authenticate(username, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = store.create_session(user["id"])
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=token,
+        max_age=max(settings.auth_session_hours, 1) * 60 * 60,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return {"user": user}
+
+
+@app.post("/auth/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    store: Annotated[AuthStore, Depends(get_auth_store)],
+) -> dict:
+    token = request.cookies.get(settings.auth_cookie_name, "")
+    if token:
+        store.delete_session(token)
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
+    return {"message": "Signed out"}
+
+
+@app.get("/auth/me")
+async def auth_me(user: AuthenticatedUser, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return {"user": user}
+
+
+@app.get("/users")
+async def users(_admin: AdminUser, store: Annotated[AuthStore, Depends(get_auth_store)]) -> dict:
+    return {"users": store.list_users()}
+
+
+@app.post("/users", status_code=201)
+async def create_user(
+    payload: CreateUserPayload,
+    _admin: AdminUser,
+    store: Annotated[AuthStore, Depends(get_auth_store)],
+) -> dict:
+    username = _clean_username(payload.username)
+    try:
+        user = store.create_user(username, payload.password, payload.role)
+    except UserExistsError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"message": f"Created {username}", "user": user, "users": store.list_users()}
+
+
 @app.get("/faces")
-async def enrolled_faces() -> dict:
+async def enrolled_faces(_admin: AdminUser) -> dict:
     return {
         "names": face_store.names(),
         "needsReenrollment": face_store.needs_reenrollment(),
@@ -59,7 +204,11 @@ async def enrolled_faces() -> dict:
 
 
 @app.post("/faces/enroll", status_code=201)
-async def enroll_face(name: str = Form(...), image: UploadFile = File(...)) -> dict:
+async def enroll_face(
+    _admin: AdminUser,
+    name: str = Form(...),
+    image: UploadFile = File(...),
+) -> dict:
     clean_name = name.strip()
     if not re.fullmatch(r"[\w .'-]{1,60}", clean_name, flags=re.UNICODE):
         raise HTTPException(status_code=400, detail="Name contains unsupported characters")
@@ -78,6 +227,7 @@ async def enroll_face(name: str = Form(...), image: UploadFile = File(...)) -> d
 
 @app.post("/analyze")
 async def analyze(
+    _user: AuthenticatedUser,
     image: UploadFile = File(...),
     classes: str = Form("person"),
     recognize_faces: bool = Form(True),
