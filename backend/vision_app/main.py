@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import re
 from time import perf_counter
+from uuid import uuid4
+
+import cv2
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .config import settings
 from .detector import detector
 from .faces import face_store
 from .image_utils import decode_upload
@@ -26,9 +30,24 @@ def parse_classes(value: str) -> list[str]:
     return clean[:20]
 
 
+def save_enrollment_photo(name: str, frame) -> None:
+    """Store a normalized enrollment photo in a safe per-person directory."""
+    directory_name = re.sub(r"[^\w-]+", "_", name, flags=re.UNICODE).strip("_") or "person"
+    person_directory = settings.face_photo_dir / directory_name
+    person_directory.mkdir(parents=True, exist_ok=True)
+    encoded, content = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    if not encoded:
+        raise OSError("Could not encode enrollment photo")
+    (person_directory / f"{uuid4().hex}.jpg").write_bytes(content.tobytes())
+
+
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "modelLoaded": detector._model is not None}
+    return {
+        "status": "ok",
+        "modelLoaded": detector._model is not None,
+        "faceEngine": "opencv-yunet-sface",
+    }
 
 
 @app.get("/faces")
@@ -47,10 +66,13 @@ async def enroll_face(name: str = Form(...), image: UploadFile = File(...)) -> d
     frame, _ = await decode_upload(image)
     try:
         face_store.enroll(clean_name, frame)
+        save_enrollment_photo(clean_name, frame)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail="Could not store enrollment photo") from error
     return {"message": f"Enrolled {clean_name}", "names": face_store.names()}
 
 

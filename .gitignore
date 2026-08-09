@@ -8,5 +8,8 @@ __pycache__/
 .pytest_cache/
 backend/data/*
 !backend/data/.gitkeep
+!backend/data/people/
+backend/data/people/*
+!backend/data/people/.gitkeep
 *.pt
 *.onnx

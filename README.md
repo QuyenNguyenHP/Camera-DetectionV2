@@ -8,7 +8,7 @@
 - **Phát hiện khuôn mặt:** OpenCV YuNet chạy bằng ONNX trên CPU.
 - **Nhận diện khuôn mặt:** OpenCV SFace chạy bằng ONNX trên CPU.
 - **Theo dõi khuôn mặt:** tracker IoU tái sử dụng danh tính giữa các frame.
-- **Dữ liệu khuôn mặt:** lưu cục bộ dưới dạng JSON.
+- **Dữ liệu khuôn mặt:** lưu vector cục bộ dưới dạng JSON và ảnh đăng ký trong thư mục riêng.
 
 > **Lưu ý quan trọng:** dự án này chạy hoàn toàn bằng **CPU**, không sử dụng GPU
 > NVIDIA, CUDA hoặc cuDNN. Tốc độ phân tích trực tiếp sẽ phụ thuộc vào CPU và có
@@ -20,11 +20,11 @@
 - Tải ảnh lên hoặc lấy hình ảnh trực tiếp từ webcam.
 - Liệt kê và chuyển đổi giữa nhiều camera trên cùng thiết bị.
 - Phân tích một khung hình hoặc quét liên tục.
-- Đăng ký khuôn mặt mới với tên người dùng.
+- Đăng ký khuôn mặt mới trên trang Identity Enrollment riêng.
 - So khớp khuôn mặt với dữ liệu đã đăng ký.
 - Trả kết quả từ backend dưới dạng JSON và vẽ khung nhận diện trên frontend.
-- Không lưu ảnh dùng để đăng ký; chỉ lưu vector khuôn mặt trong
-  `backend/data/faces.json`.
+- Lưu vector khuôn mặt trong `backend/data/faces.json` và ảnh đăng ký trong
+  `backend/data/people/<tên người>/`.
 
 ## 2. Cấu trúc dự án
 
@@ -32,7 +32,10 @@
 Camera-Detection/
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx          Giao diện, webcam và khung nhận diện
+│   │   ├── main.jsx         Entry point và điều hướng giữa Scan/Enrollment
+│   │   ├── pages/           Logic cho trang Scan và Enrollment
+│   │   ├── components/      Header, navigator, camera box, footer và sidebar
+│   │   ├── utils/           Tiện ích camera dùng chung
 │   │   ├── api.js           Gọi trực tiếp FastAPI
 │   │   └── styles.css
 │   ├── package.json
@@ -47,7 +50,7 @@ Camera-Detection/
 │   │   └── config.py        Cấu hình từ biến môi trường
 │   ├── models/              Model YuNet và SFace ONNX
 │   ├── download_models.py   Tải model chính thức từ OpenCV Zoo
-│   ├── data/                Nơi lưu faces.json
+│   ├── data/                Nơi lưu faces.json và ảnh people/<tên người>/
 │   ├── tests/
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
@@ -193,6 +196,7 @@ Nội dung mặc định:
 YOLO_MODEL=yolov8s-worldv2.pt
 DETECTION_CONFIDENCE=0.30
 FACE_STORE=data/faces.json
+FACE_PHOTO_DIR=data/people
 YUNET_MODEL=models/face_detection_yunet_2023mar.onnx
 SFACE_MODEL=models/face_recognition_sface_2021dec.onnx
 YUNET_SCORE_THRESHOLD=0.80
@@ -211,6 +215,7 @@ BACKEND_RELOAD=true
 | `YOLO_MODEL` | Tên hoặc đường dẫn đến file model YOLO-World |
 | `DETECTION_CONFIDENCE` | Ngưỡng tin cậy tối thiểu của vật thể |
 | `FACE_STORE` | File JSON lưu vector khuôn mặt |
+| `FACE_PHOTO_DIR` | Thư mục lưu ảnh đăng ký, phân theo tên người |
 | `YUNET_MODEL` | Đường dẫn model ONNX phát hiện khuôn mặt |
 | `SFACE_MODEL` | Đường dẫn model ONNX tạo embedding khuôn mặt |
 | `YUNET_SCORE_THRESHOLD` | Ngưỡng tin cậy phát hiện khuôn mặt |

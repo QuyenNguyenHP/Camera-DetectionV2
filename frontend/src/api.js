@@ -22,3 +22,7 @@ export async function enrollFace(blob, name) {
   form.append("name", name);
   return request("/faces/enroll", { method: "POST", body: form });
 }
+
+export async function getEnrolledFaces() {
+  return request("/faces", { method: "GET" });
+}

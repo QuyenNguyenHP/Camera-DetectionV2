@@ -14,6 +14,7 @@ class Settings:
     confidence: float = float(os.getenv("DETECTION_CONFIDENCE", "0.30"))
     max_upload_bytes: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
     face_store: Path = Path(os.getenv("FACE_STORE", "data/faces.json"))
+    face_photo_dir: Path = Path(os.getenv("FACE_PHOTO_DIR", "data/people"))
     yunet_model: Path = Path(
         os.getenv("YUNET_MODEL", "models/face_detection_yunet_2023mar.onnx")
     )
