@@ -13,7 +13,6 @@ function pageFromHash() {
 export function MainPage() {
   const [page, setPage] = useState(pageFromHash);
   const [user, setUser] = useState(null);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [setupRequired, setSetupRequired] = useState(false);
 
   useEffect(() => {
@@ -28,15 +27,13 @@ export function MainPage() {
         } catch {
           setSetupRequired(false);
         }
-      } finally {
-        setCheckingSession(false);
       }
     };
+
     loadSession();
   }, []);
 
   useEffect(() => {
-    if (checkingSession) return undefined;
     const syncPage = () => {
       const requested = pageFromHash();
       if (requested === "enrollment" && user?.role !== "admin") {
@@ -46,10 +43,11 @@ export function MainPage() {
       }
       setPage(requested);
     };
+
     syncPage();
     window.addEventListener("hashchange", syncPage);
     return () => window.removeEventListener("hashchange", syncPage);
-  }, [checkingSession, user]);
+  }, [user]);
 
   useEffect(() => {
     const expireSession = () => setUser(null);
@@ -78,7 +76,6 @@ export function MainPage() {
     }
   };
 
-  if (checkingSession) return <main className="session-loading"><span>Checking secure session…</span></main>;
   if (!user) return <LoginPage onLogin={signedIn} setupRequired={setupRequired} />;
 
   const authorizedPage = page === "enrollment" && user.role !== "admin" ? "scan" : page;
