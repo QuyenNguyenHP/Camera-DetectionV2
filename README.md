@@ -393,8 +393,38 @@ Không dùng Vite development server và HTTP thô để triển khai cho máy k
 Trình duyệt chỉ cho phép camera trên `localhost` hoặc HTTPS; đồng thời production
 phải dùng session cookie `Secure`.
 
-Để truy cập từ PC khác, build frontend/backend thành Docker image và đặt Caddy
-hoặc Apache2 HTTPS phía trước. Xem hướng dẫn từng bước tại:
+### Build và chạy bằng Docker Compose
+
+Sau mỗi lần cập nhật hoặc chỉnh sửa source code, chạy:
+
+```bash
+cd /home/dq/Camera-Detection/docker_camera_detection
+docker compose up -d --build
+```
+
+Lệnh này tự build image `camera-detection:1.1.0-cpu`, sau đó tạo lại và chạy
+container ở chế độ nền. Không cần chạy riêng `docker build`.
+
+Nếu đang đứng tại thư mục gốc của dự án, dùng lệnh tương đương:
+
+```bash
+docker compose -f docker_camera_detection/docker-compose.yml up -d --build
+```
+
+Kiểm tra trạng thái và log:
+
+```bash
+cd /home/dq/Camera-Detection/docker_camera_detection
+docker compose ps
+docker compose logs -f camera-detection
+```
+
+Dữ liệu tài khoản và khuôn mặt nằm trong volume `camera-detection-data`, vì vậy
+vẫn được giữ lại khi container được build lại. Không thêm tùy chọn `-v` vào lệnh
+`docker compose down` trừ khi muốn xóa toàn bộ dữ liệu này.
+
+Để truy cập từ PC khác, đặt Caddy hoặc Apache2 HTTPS phía trước container. Xem
+hướng dẫn triển khai và xuất image sang máy khác tại:
 
 ```text
 docker_camera_detection/README.md

@@ -1,5 +1,8 @@
 services:
   camera-detection:
+    build:
+      context: ..
+      dockerfile: docker_camera_detection/Dockerfile
     image: ${CAMERA_IMAGE:-camera-detection:1.1.0-cpu}
     container_name: camera-detection
     restart: unless-stopped
