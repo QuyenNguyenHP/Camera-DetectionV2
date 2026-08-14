@@ -31,6 +31,11 @@ class Settings:
     face_recognition_interval: int = int(os.getenv("FACE_RECOGNITION_INTERVAL", "8"))
     track_iou_threshold: float = float(os.getenv("TRACK_IOU_THRESHOLD", "0.25"))
     track_max_missed: int = int(os.getenv("TRACK_MAX_MISSED", "3"))
+    gesture_model: Path = Path(
+        os.getenv("GESTURE_MODEL", "models/gesture_recognizer.task")
+    )
+    gesture_min_confidence: float = float(os.getenv("GESTURE_MIN_CONFIDENCE", "0.55"))
+    gesture_num_hands: int = int(os.getenv("GESTURE_NUM_HANDS", "2"))
     auth_database: Path = Path(os.getenv("AUTH_DATABASE", "data/users.db"))
     auth_session_hours: int = int(os.getenv("AUTH_SESSION_HOURS", "12"))
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "camera_session")

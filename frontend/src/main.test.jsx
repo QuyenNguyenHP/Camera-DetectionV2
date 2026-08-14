@@ -41,7 +41,7 @@ describe("Frontend entry point", () => {
     loginUser.mockResolvedValueOnce({ id: 2, username: "operator", role: "user" });
     render(<MainPage />);
 
-    expect(await screen.findByRole("heading", { name: "Sign in to continue." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "Username" }), { target: { value: "operator" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-secure-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
@@ -53,6 +53,24 @@ describe("Frontend entry point", () => {
     const classes = ["person", "car", "backpack", "cell phone", "watch", "books"];
     const colors = classes.map((item) => detectionColor(item, classes));
     expect(new Set(colors).size).toBe(classes.length);
+  });
+
+  it("offers independent controls for objects, faces, and hand gestures", async () => {
+    render(<MainPage />);
+
+    const objectToggle = await screen.findByLabelText("Enable object detection");
+    const faceToggle = screen.getByLabelText("Enable face recognition");
+    const gestureToggle = screen.getByLabelText("Enable hand gesture detection");
+    expect(objectToggle).toBeChecked();
+    expect(faceToggle).toBeChecked();
+    expect(gestureToggle).toBeChecked();
+
+    fireEvent.click(objectToggle);
+    fireEvent.click(faceToggle);
+    fireEvent.click(gestureToggle);
+    expect(objectToggle).not.toBeChecked();
+    expect(faceToggle).not.toBeChecked();
+    expect(gestureToggle).not.toBeChecked();
   });
 
   it("opens identity enrollment and user management for an admin", async () => {

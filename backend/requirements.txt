@@ -7,4 +7,5 @@ numpy==2.1.3
 opencv-python-headless==4.11.0.86
 Pillow==11.2.1
 ultralytics==8.3.152
+mediapipe==0.10.35
 git+https://github.com/ultralytics/CLIP.git

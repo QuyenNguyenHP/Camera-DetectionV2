@@ -12,6 +12,7 @@ def test_health_does_not_force_model_download():
     payload = asyncio.run(health())
     assert payload["status"] == "ok"
     assert payload["modelLoaded"] is False
+    assert payload["gestureModelLoaded"] is False
 
 
 def test_parse_classes_is_bounded_and_sanitized():

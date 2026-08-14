@@ -5,11 +5,14 @@ import EmptyStage from "./EmptyStage.jsx";
 function DetectionOverlay({ result, objectClasses }) {
   return (
     <div className="overlay">
-      {result?.detections.map((item, index) => (
+      {result?.detections?.map((item, index) => (
         <DetectionBox key={`d-${item.trackId ?? `${item.label}-${index}`}`} item={item} objectClasses={objectClasses} />
       ))}
-      {result?.faces.map((item, index) => (
+      {result?.faces?.map((item, index) => (
         <DetectionBox key={`f-${item.trackId ?? index}`} item={item} face />
+      ))}
+      {result?.hands?.map((item, index) => (
+        <DetectionBox key={`h-${index}`} item={item} hand />
       ))}
     </div>
   );

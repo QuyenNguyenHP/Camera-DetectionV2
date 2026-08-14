@@ -11,6 +11,7 @@
   --muted: #8ea0b9;
   --cyan: #7fbfe7;
   --cyan-deep: #0d41a9;
+  --gesture: #f3b562;
   --danger: #ff6f7d;
 }
 
@@ -294,7 +295,7 @@ input[type=file] { display: none; }
 
 aside { display: flex; flex-direction: column; gap: 20px; }
 .panel { padding: 22px; box-shadow: none; }
-.metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 20px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 20px; }
 .metric-grid div {
   display: flex;
   flex-direction: column;
@@ -329,6 +330,8 @@ textarea:focus, .enroll input:focus, .login-card input:focus, .user-form input:f
 .toggle-row b, .toggle-row span { display: block; float: none !important; }
 .toggle-row span { margin-top: 3px; }
 .toggle-row input { width: 34px; accent-color: var(--cyan); }
+.controls textarea:disabled { opacity: .45; cursor: not-allowed; }
+.hand-box { border-style: dashed; }
 .enroll-title { display: flex; align-items: center; gap: 10px; margin: 18px 0 7px; color: var(--cyan); }
 .enroll-title b, .enroll-title span { display: block; }
 .enroll-title b { color: #e8f0fb; font-family: Manrope, sans-serif; font-size: 14px; }

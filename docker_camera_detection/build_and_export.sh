@@ -18,7 +18,8 @@ command -v docker >/dev/null 2>&1 || {
 for REQUIRED_FILE in \
   "$PROJECT_DIR/backend/yolov8s-worldv2.pt" \
   "$PROJECT_DIR/backend/models/face_detection_yunet_2023mar.onnx" \
-  "$PROJECT_DIR/backend/models/face_recognition_sface_2021dec.onnx"
+  "$PROJECT_DIR/backend/models/face_recognition_sface_2021dec.onnx" \
+  "$PROJECT_DIR/backend/models/gesture_recognizer.task"
 do
   if [ ! -f "$REQUIRED_FILE" ]; then
     echo "Required model is missing: $REQUIRED_FILE" >&2
@@ -37,10 +38,11 @@ echo "Validating Python libraries and packaged model files..."
 docker run --rm "$IMAGE_NAME:$IMAGE_VERSION" python -c "\
 from importlib import metadata; \
 from pathlib import Path; \
-import cv2, torch, ultralytics, clip; \
+import cv2, torch, ultralytics, clip, mediapipe; \
 from vision_app.detector import detector; \
 from vision_app.faces import face_store; \
-required = [Path('yolov8s-worldv2.pt'), Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx')]; \
+from vision_app.gestures import gesture_detector; \
+required = [Path('yolov8s-worldv2.pt'), Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx'), Path('models/gesture_recognizer.task')]; \
 assert all(path.is_file() and path.stat().st_size > 0 for path in required); \
 cuda_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('nvidia-')); \
 triton_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('triton')); \
@@ -49,7 +51,8 @@ assert not cuda_packages, f'CUDA packages detected: {cuda_packages}'; \
 assert not triton_packages, f'Triton packages detected: {triton_packages}'; \
 detector._load(); \
 face_store._load_models(); \
-print(f'CPU-only libraries and YOLO/YuNet/SFace models loaded successfully (torch={torch.__version__})')"
+gesture_detector._load(); \
+print(f'CPU-only libraries and YOLO/YuNet/SFace/MediaPipe models loaded successfully (torch={torch.__version__})')"
 
 docker rm -f "$VALIDATION_CONTAINER" >/dev/null 2>&1 || true
 cleanup_validation() {

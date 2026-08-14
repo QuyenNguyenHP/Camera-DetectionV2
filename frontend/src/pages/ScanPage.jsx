@@ -18,7 +18,9 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
   const [mode, setMode] = useState("empty");
   const [imageUrl, setImageUrl] = useState("");
   const [classes, setClasses] = useState(INITIAL_CLASSES);
+  const [detectObjects, setDetectObjects] = useState(true);
   const [recognizeFaces, setRecognizeFaces] = useState(true);
+  const [detectGestures, setDetectGestures] = useState(true);
   const [live, setLive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
@@ -149,7 +151,14 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
     setError("");
     try {
       const blob = await currentFrame();
-      setResult(await analyzeImage(blob, classes, recognizeFaces, mode === "camera" ? trackingSession.current : ""));
+      setResult(await analyzeImage(
+        blob,
+        classes,
+        detectObjects,
+        recognizeFaces,
+        detectGestures,
+        mode === "camera" ? trackingSession.current : "",
+      ));
     } catch (err) {
       setError(err.message);
       setLive(false);
@@ -157,7 +166,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       inFlight.current = false;
       setBusy(false);
     }
-  }, [classes, currentFrame, mode, recognizeFaces]);
+  }, [classes, currentFrame, detectGestures, detectObjects, mode, recognizeFaces]);
 
   useEffect(() => {
     if (!live || mode !== "camera") return undefined;
@@ -174,8 +183,8 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
     };
   }, [live, mode, scan]);
 
-  const people = result?.detections.filter((item) => item.label === "person").length || 0;
-  const knownFaces = result?.faces.filter((face) => face.name !== "Unknown").length || 0;
+  const people = result?.detections?.filter((item) => item.label === "person").length || 0;
+  const knownFaces = result?.faces?.filter((face) => face.name !== "Unknown").length || 0;
 
   return (
     <main>
@@ -183,7 +192,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       <section className="hero-copy">
         <div>
           <p className="eyebrow"><Sparkles size={14} /> DQ TECH</p>
-          <h2>Recognize people and objects</h2>
+          <h2>Recognize people, objects and hand gestures</h2>
         </div>
         <p>A Product under the development of DQ TECH</p>
       </section>
@@ -208,16 +217,21 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
         <ObservationSidebar
           people={people}
           knownFaces={knownFaces}
-          objectCount={result?.detections.length || 0}
+          objectCount={result?.detections?.length || 0}
+          handCount={result?.hands?.length || 0}
           classes={classes}
+          detectObjects={detectObjects}
           recognizeFaces={recognizeFaces}
+          detectGestures={detectGestures}
           warnings={result?.warnings || []}
           error={error}
           onClassesChange={(event) => setClasses(event.target.value)}
+          onDetectObjectsChange={(event) => setDetectObjects(event.target.checked)}
           onRecognizeFacesChange={(event) => setRecognizeFaces(event.target.checked)}
+          onDetectGesturesChange={(event) => setDetectGestures(event.target.checked)}
         />
       </section>
-      <Footer items={["YOLO-WORLD", "YUNET + SFACE ONNX", "CPU FACE TRACKING"]} />
+      <Footer items={["YOLO-WORLD", "YUNET + SFACE ONNX", "MEDIAPIPE GESTURES"]} />
     </main>
   );
 }

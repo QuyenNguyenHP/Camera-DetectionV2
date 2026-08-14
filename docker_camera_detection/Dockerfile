@@ -61,7 +61,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SFACE_MODEL=models/face_recognition_sface_2021dec.onnx
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y libglib2.0-0 libgomp1 \
+    && apt-get install --no-install-recommends -y libegl1 libgles2 libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend

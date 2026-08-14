@@ -7,6 +7,7 @@
 - **Nhận diện vật thể:** YOLO-World (`yolov8s-worldv2.pt`).
 - **Phát hiện khuôn mặt:** OpenCV YuNet chạy bằng ONNX trên CPU.
 - **Nhận diện khuôn mặt:** OpenCV SFace chạy bằng ONNX trên CPU.
+- **Nhận diện cử chỉ tay:** MediaPipe Gesture Recognizer chạy bằng model offline.
 - **Theo dõi khuôn mặt:** tracker IoU tái sử dụng danh tính giữa các frame.
 - **Dữ liệu khuôn mặt:** lưu vector cục bộ dưới dạng JSON và ảnh đăng ký trong thư mục riêng.
 
@@ -24,6 +25,9 @@
 - Trang Login là điểm vào mặc định; người dùng phải đăng nhập trước khi Scan.
 - Phân quyền `user` và `admin`; chỉ admin được đăng ký khuôn mặt và tạo tài khoản.
 - So khớp khuôn mặt với dữ liệu đã đăng ký.
+- Bật/tắt độc lập nhận diện vật thể, khuôn mặt và cử chỉ tay.
+- Nhận diện tối đa hai bàn tay cùng các cử chỉ dựng sẵn như `Open_Palm`,
+  `Closed_Fist`, `Thumb_Up`, `Thumb_Down`, `Victory`, `Pointing_Up` và `ILoveYou`.
 - Trả kết quả từ backend dưới dạng JSON và vẽ khung nhận diện trên frontend.
 - Lưu vector khuôn mặt trong `backend/data/faces.json` và ảnh đăng ký trong
   `backend/data/people/<tên người>/`.
@@ -53,7 +57,7 @@ Camera-Detection/
 │   │   ├── faces.py         Đăng ký và nhận diện khuôn mặt
 │   │   ├── image_utils.py   Đọc và kiểm tra ảnh
 │   │   └── config.py        Cấu hình từ biến môi trường
-│   ├── models/              Model YuNet và SFace ONNX
+│   ├── models/              Model YuNet, SFace và MediaPipe Gesture Recognizer
 │   ├── download_models.py   Tải model chính thức từ OpenCV Zoo
 │   ├── data/                Nơi lưu faces.json và ảnh people/<tên người>/
 │   ├── tests/
@@ -213,6 +217,9 @@ FACE_SIMILARITY_THRESHOLD=0.40
 FACE_RECOGNITION_INTERVAL=8
 TRACK_IOU_THRESHOLD=0.25
 TRACK_MAX_MISSED=3
+GESTURE_MODEL=models/gesture_recognizer.task
+GESTURE_MIN_CONFIDENCE=0.55
+GESTURE_NUM_HANDS=2
 MAX_UPLOAD_BYTES=10485760
 BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8000
@@ -243,6 +250,9 @@ Admin ban đầu chỉ được tạo khi database chưa có tài khoản. Sau l
 | `FACE_RECOGNITION_INTERVAL` | Số frame tracker chờ trước khi chạy lại SFace |
 | `TRACK_IOU_THRESHOLD` | IoU tối thiểu để nối khuôn mặt với track cũ |
 | `TRACK_MAX_MISSED` | Số frame mất dấu trước khi xóa track |
+| `GESTURE_MODEL` | Đường dẫn model MediaPipe Gesture Recognizer |
+| `GESTURE_MIN_CONFIDENCE` | Ngưỡng nhận diện bàn tay và phân loại cử chỉ |
+| `GESTURE_NUM_HANDS` | Số bàn tay tối đa được nhận diện trong một frame |
 | `MAX_UPLOAD_BYTES` | Kích thước ảnh tải lên tối đa, mặc định 10 MB |
 | `BACKEND_HOST` | Địa chỉ backend lắng nghe, mặc định chỉ trên máy hiện tại |
 | `BACKEND_PORT` | Cổng backend, mặc định `8000` |
@@ -462,6 +472,8 @@ curl -c /tmp/camera-cookies.txt \
 - `image`: file ảnh.
 - `classes`: danh sách vật thể, phân tách bằng dấu phẩy.
 - `recognize_faces`: `true` hoặc `false`.
+- `detect_objects`: `true` hoặc `false`.
+- `detect_gestures`: `true` hoặc `false`.
 - `tracking_id`: mã phiên camera; bỏ trống đối với ảnh upload.
 
 Ví dụ:

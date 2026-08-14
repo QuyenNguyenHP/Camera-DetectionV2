@@ -16,6 +16,7 @@ from .auth import AuthStore, UserExistsError
 from .config import settings
 from .detector import detector
 from .faces import face_store
+from .gestures import gesture_detector
 from .image_utils import decode_upload
 
 
@@ -112,6 +113,8 @@ async def health() -> dict:
         "status": "ok",
         "modelLoaded": detector._model is not None,
         "faceEngine": "opencv-yunet-sface",
+        "gestureEngine": "mediapipe",
+        "gestureModelLoaded": gesture_detector._recognizer is not None,
     }
 
 
@@ -230,7 +233,9 @@ async def analyze(
     _user: AuthenticatedUser,
     image: UploadFile = File(...),
     classes: str = Form("person"),
+    detect_objects: bool = Form(True),
     recognize_faces: bool = Form(True),
+    detect_gestures: bool = Form(True),
     tracking_id: str = Form(""),
 ) -> dict:
     frame, _ = await decode_upload(image)
@@ -241,10 +246,12 @@ async def analyze(
         warnings.append(
             "Dữ liệu khuôn mặt Dlib cũ không tương thích với SFace; hãy đăng ký lại khuôn mặt."
         )
-    try:
-        detections = detector.detect(frame, parse_classes(classes), clean_tracking_id)
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=f"Object detector unavailable: {error}") from error
+    detections = []
+    if detect_objects:
+        try:
+            detections = detector.detect(frame, parse_classes(classes), clean_tracking_id)
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"Object detector unavailable: {error}") from error
 
     faces = []
     if recognize_faces:
@@ -253,11 +260,19 @@ async def analyze(
         except Exception as error:
             warnings.append(f"Face recognition unavailable: {error}")
 
+    hands = []
+    if detect_gestures:
+        try:
+            hands = gesture_detector.detect(frame)
+        except Exception as error:
+            warnings.append(f"Hand gesture detection unavailable: {error}")
+
     height, width = frame.shape[:2]
     return {
         "image": {"width": width, "height": height},
         "detections": detections,
         "faces": faces,
+        "hands": hands,
         "warnings": warnings,
         "processingMs": round((perf_counter() - started) * 1000),
     }

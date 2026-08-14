@@ -49,11 +49,20 @@ export async function createUser(username, password, role) {
   });
 }
 
-export async function analyzeImage(blob, classes, recognizeFaces, trackingId = "") {
+export async function analyzeImage(
+  blob,
+  classes,
+  detectObjects,
+  recognizeFaces,
+  detectGestures,
+  trackingId = "",
+) {
   const form = new FormData();
   form.append("image", blob, "frame.jpg");
   form.append("classes", classes);
+  form.append("detect_objects", String(detectObjects));
   form.append("recognize_faces", String(recognizeFaces));
+  form.append("detect_gestures", String(detectGestures));
   form.append("tracking_id", trackingId);
   return request("/analyze", { method: "POST", body: form });
 }
