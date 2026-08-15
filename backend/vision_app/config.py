@@ -36,6 +36,15 @@ class Settings:
     )
     gesture_min_confidence: float = float(os.getenv("GESTURE_MIN_CONFIDENCE", "0.55"))
     gesture_num_hands: int = int(os.getenv("GESTURE_NUM_HANDS", "2"))
+    home_assistant_url: str = os.getenv("HA_URL", "").strip().rstrip("/")
+    home_assistant_token: str = os.getenv("HA_TOKEN", "").strip()
+    home_assistant_entity_id: str = os.getenv(
+        "HA_ENTITY_ID", "switch.t1_chieu_sang_switch_3"
+    ).strip()
+    home_gesture_hold_frames: int = int(os.getenv("HOME_GESTURE_HOLD_FRAMES", "3"))
+    home_gesture_cooldown_seconds: float = float(
+        os.getenv("HOME_GESTURE_COOLDOWN_SECONDS", "2.0")
+    )
     auth_database: Path = Path(os.getenv("AUTH_DATABASE", "data/users.db"))
     auth_session_hours: int = int(os.getenv("AUTH_SESSION_HOURS", "12"))
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "camera_session")

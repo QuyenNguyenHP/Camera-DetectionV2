@@ -21,12 +21,14 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
   const [detectObjects, setDetectObjects] = useState(true);
   const [recognizeFaces, setRecognizeFaces] = useState(true);
   const [detectGestures, setDetectGestures] = useState(true);
+  const [controlHome, setControlHome] = useState(false);
   const [live, setLive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
   const [result, setResult] = useState(null);
+  const [homeNotification, setHomeNotification] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -157,6 +159,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
         detectObjects,
         recognizeFaces,
         detectGestures,
+        controlHome,
         mode === "camera" ? trackingSession.current : "",
       ));
     } catch (err) {
@@ -166,7 +169,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       inFlight.current = false;
       setBusy(false);
     }
-  }, [classes, currentFrame, detectGestures, detectObjects, mode, recognizeFaces]);
+  }, [classes, controlHome, currentFrame, detectGestures, detectObjects, mode, recognizeFaces]);
 
   useEffect(() => {
     if (!live || mode !== "camera") return undefined;
@@ -182,6 +185,16 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       clearTimeout(timer);
     };
   }, [live, mode, scan]);
+
+  useEffect(() => {
+    if (result?.homeControl?.status !== "executed") return undefined;
+    setHomeNotification({
+      action: result.homeControl.action,
+      entityId: result.homeControl.entityId,
+    });
+    const timer = setTimeout(() => setHomeNotification(null), 3000);
+    return () => clearTimeout(timer);
+  }, [result]);
 
   const people = result?.detections?.filter((item) => item.label === "person").length || 0;
   const knownFaces = result?.faces?.filter((face) => face.name !== "Unknown").length || 0;
@@ -223,12 +236,19 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
           detectObjects={detectObjects}
           recognizeFaces={recognizeFaces}
           detectGestures={detectGestures}
+          controlHome={controlHome}
+          homeNotification={homeNotification}
           warnings={result?.warnings || []}
           error={error}
           onClassesChange={(event) => setClasses(event.target.value)}
           onDetectObjectsChange={(event) => setDetectObjects(event.target.checked)}
           onRecognizeFacesChange={(event) => setRecognizeFaces(event.target.checked)}
           onDetectGesturesChange={(event) => setDetectGestures(event.target.checked)}
+          onControlHomeChange={(event) => {
+            const enabled = event.target.checked;
+            setControlHome(enabled);
+            if (enabled) setDetectGestures(true);
+          }}
         />
       </section>
       <Footer items={["YOLO-WORLD", "YUNET + SFACE ONNX", "MEDIAPIPE GESTURES"]} />

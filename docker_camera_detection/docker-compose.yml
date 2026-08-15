@@ -8,6 +8,7 @@ services:
     restart: unless-stopped
     env_file:
       - runtime.env
+      - ../backend/.env
     environment:
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Duyquyen1301@}

@@ -331,6 +331,7 @@ textarea:focus, .enroll input:focus, .login-card input:focus, .user-form input:f
 .toggle-row span { margin-top: 3px; }
 .toggle-row input { width: 34px; accent-color: var(--cyan); }
 .controls textarea:disabled { opacity: .45; cursor: not-allowed; }
+.home-control-status { margin-top: 14px; padding: 10px 12px; border: 1px solid rgba(31, 214, 178, .35); border-radius: 8px; color: #7ce8d2; font-size: 11px; line-height: 1.45; background: rgba(31, 214, 178, .07); }
 .hand-box { border-style: dashed; }
 .enroll-title { display: flex; align-items: center; gap: 10px; margin: 18px 0 7px; color: var(--cyan); }
 .enroll-title b, .enroll-title span { display: block; }

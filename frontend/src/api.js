@@ -55,6 +55,7 @@ export async function analyzeImage(
   detectObjects,
   recognizeFaces,
   detectGestures,
+  controlHome,
   trackingId = "",
 ) {
   const form = new FormData();
@@ -63,6 +64,7 @@ export async function analyzeImage(
   form.append("detect_objects", String(detectObjects));
   form.append("recognize_faces", String(recognizeFaces));
   form.append("detect_gestures", String(detectGestures));
+  form.append("control_home", String(controlHome));
   form.append("tracking_id", trackingId);
   return request("/analyze", { method: "POST", body: form });
 }

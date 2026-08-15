@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getAuthStatus, getCurrentUser, loginUser } from "./api.js";
+import { analyzeImage, getAuthStatus, getCurrentUser, loginUser } from "./api.js";
 import { MainPage } from "./main.jsx";
 import { detectionColor } from "./utils/detectionColors.js";
 
@@ -25,7 +25,9 @@ describe("Frontend entry point", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -61,9 +63,11 @@ describe("Frontend entry point", () => {
     const objectToggle = await screen.findByLabelText("Enable object detection");
     const faceToggle = screen.getByLabelText("Enable face recognition");
     const gestureToggle = screen.getByLabelText("Enable hand gesture detection");
+    const homeToggle = screen.getByLabelText("Bật điều khiển nhà qua cử chỉ");
     expect(objectToggle).toBeChecked();
     expect(faceToggle).toBeChecked();
     expect(gestureToggle).toBeChecked();
+    expect(homeToggle).not.toBeChecked();
 
     fireEvent.click(objectToggle);
     fireEvent.click(faceToggle);
@@ -71,6 +75,36 @@ describe("Frontend entry point", () => {
     expect(objectToggle).not.toBeChecked();
     expect(faceToggle).not.toBeChecked();
     expect(gestureToggle).not.toBeChecked();
+  });
+
+  it("shows a Home Assistant action notification for three seconds", async () => {
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:test-frame"),
+      revokeObjectURL: vi.fn(),
+    });
+    analyzeImage.mockResolvedValueOnce({
+      detections: [], faces: [], hands: [], warnings: [], processingMs: 10,
+      homeControl: {
+        status: "executed",
+        action: "switch.turn_on",
+        entityId: "switch.t1_chieu_sang_switch_3",
+      },
+    });
+    render(<MainPage />);
+
+    fireEvent.click(await screen.findByLabelText("Bật điều khiển nhà qua cử chỉ"));
+    const file = new File(["frame"], "frame.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText("Upload image"), { target: { files: [file] } });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Analyze frame" }));
+
+    await act(async () => {});
+    expect(screen.getByRole("status")).toHaveTextContent("switch.turn_on");
+    await act(() => vi.advanceTimersByTimeAsync(2999));
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("opens identity enrollment and user management for an admin", async () => {

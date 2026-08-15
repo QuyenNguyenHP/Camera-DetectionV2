@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from threading import Lock
 from time import perf_counter
@@ -17,6 +18,7 @@ from .config import settings
 from .detector import detector
 from .faces import face_store
 from .gestures import gesture_detector
+from .home_assistant import home_assistant_controller
 from .image_utils import decode_upload
 
 
@@ -236,6 +238,7 @@ async def analyze(
     detect_objects: bool = Form(True),
     recognize_faces: bool = Form(True),
     detect_gestures: bool = Form(True),
+    control_home: bool = Form(False),
     tracking_id: str = Form(""),
 ) -> dict:
     frame, _ = await decode_upload(image)
@@ -267,12 +270,28 @@ async def analyze(
         except Exception as error:
             warnings.append(f"Hand gesture detection unavailable: {error}")
 
+    home_control = {
+        "enabled": False,
+        "configured": home_assistant_controller.configured,
+        "status": "disabled",
+    }
+    if control_home:
+        if not detect_gestures:
+            warnings.append("Điều khiển nhà cần bật nhận diện cử chỉ tay.")
+        else:
+            home_control = await asyncio.to_thread(
+                home_assistant_controller.handle, hands, clean_tracking_id
+            )
+            if home_control["status"] == "error":
+                warnings.append(home_control["message"])
+
     height, width = frame.shape[:2]
     return {
         "image": {"width": width, "height": height},
         "detections": detections,
         "faces": faces,
         "hands": hands,
+        "homeControl": home_control,
         "warnings": warnings,
         "processingMs": round((perf_counter() - started) * 1000),
     }

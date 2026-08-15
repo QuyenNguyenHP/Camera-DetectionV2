@@ -10,12 +10,15 @@ export default function ObservationSidebar({
   detectObjects,
   recognizeFaces,
   detectGestures,
+  controlHome,
+  homeNotification,
   warnings,
   error,
   onClassesChange,
   onDetectObjectsChange,
   onRecognizeFacesChange,
   onDetectGesturesChange,
+  onControlHomeChange,
 }) {
   const objectClasses = classes
     .split(",")
@@ -58,6 +61,15 @@ export default function ObservationSidebar({
           <div><b>Hand gesture detection</b><span>Recognize hand poses with MediaPipe</span></div>
           <input aria-label="Enable hand gesture detection" type="checkbox" checked={detectGestures} onChange={onDetectGesturesChange} />
         </label>
+        <label className="toggle-row">
+          <div><b>Điều khiển nhà qua cử chỉ</b><span>Gửi thao tác đến Home Assistant</span></div>
+          <input aria-label="Bật điều khiển nhà qua cử chỉ" type="checkbox" checked={controlHome} onChange={onControlHomeChange} />
+        </label>
+        {controlHome && homeNotification && (
+          <div className="home-control-status" role="status">
+            Đã thực hiện {homeNotification.action} cho {homeNotification.entityId}
+          </div>
+        )}
       </div>
       {warnings.map((warning) => <div className="message warning" key={warning}><WifiOff size={17}/>{warning}</div>)}
       {error && <div className="message error"><WifiOff size={17}/>{error}</div>}
