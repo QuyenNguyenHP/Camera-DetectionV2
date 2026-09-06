@@ -205,7 +205,7 @@ Mở `backend/.env` và đặt mật khẩu mạnh cho admin đầu tiên. Khôn
 thật trong `.env.example` và không commit file `.env`:
 
 ```env
-YOLO_MODEL=yolov8s-worldv2.pt
+YOLO_MODEL=models/yolov8s-worldv2.pt
 YOLO_DEVICE=cpu
 DETECTION_CONFIDENCE=0.30
 FACE_STORE=data/faces.json
@@ -296,13 +296,13 @@ tải model nếu file chưa tồn tại. Muốn tải trước, chạy:
 ```bash
 cd /home/dq/Camera-Detection/backend
 source .venv/bin/activate
-python -c "from ultralytics import YOLOWorld; YOLOWorld('yolov8s-worldv2.pt'); print('Model ready')"
+python -c "from ultralytics import YOLOWorld; YOLOWorld('models/yolov8s-worldv2.pt'); print('Model ready')"
 ```
 
 Sau khi hoàn thành, file thường nằm tại:
 
 ```text
-backend/yolov8s-worldv2.pt
+backend/models/yolov8s-worldv2.pt
 ```
 
 Sau khi model đã được tải, chức năng nhận diện có thể chạy mà không cần Internet.
@@ -667,3 +667,49 @@ quyết định có ảnh hưởng lớn đến con người.
 - [Hướng dẫn cài đặt Ultralytics](https://docs.ultralytics.com/quickstart/)
 - [Tài liệu YOLO-World](https://docs.ultralytics.com/models/yolo-world/)
 - [Tải Node.js](https://nodejs.org/en/download)
+
+## Body pose detection (stage 1)
+
+YOLO26n-pose detects people and 17 body keypoints on CPU. This stage shows
+skeletons only; it does not classify falls or send fall alerts.
+
+```bash
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+backend/.venv/bin/python backend/download_pose_model.py
+```
+
+Restart the backend, open Scan, enable **Body pose**, then use **Analyze frame**
+or **Live scan**. The setting is independent for each camera. Disable other
+recognition features when measuring pose performance on CPU.
+
+The checkpoint is stored in `backend/models/yolo26n-pose.pt` (excluded from Git).
+`POSE_MODEL` can override its path. The `/analyze` form accepts `detect_poses`
+(default false) and returns `poses`, with normalized boxes and 17 named keypoints
+including confidence values. Missing models produce a warning without preventing
+other recognition features. Model source: https://docs.ultralytics.com/tasks/pose/
+
+## Theo dõi trạng thái mắt (thử nghiệm)
+
+Chạy `backend/.venv/bin/python backend/download_drowsiness_model.py` để tải
+Face Landmarker chính thức của Google vào `backend/models/face_landmarker.task`.
+Bật **Theo dõi buồn ngủ** và **Live scan** ở camera hướng vào mặt tài xế.
+Bộ đếm riêng theo tài khoản/camera cảnh báo nghi buồn ngủ sau 2 giây nhắm cả
+hai mắt liên tục. Có thể chỉnh `DROWSINESS_CLOSED_SECONDS` và `FACE_LANDMARKER_MODEL`.
+Điểm eyeBlink là hệ số biểu cảm, không phải xác suất buồn ngủ; ngưỡng 0.6/0.35
+là ngưỡng thử nghiệm cần hiệu chỉnh với người dùng và điều kiện camera.
+
+Khoảng lấy mẫu quá 1 giây, nhiều mặt, mặt quá nhỏ, lệch mạnh hoặc trạng thái
+mắt không rõ sẽ ngắt bộ đếm. Ảnh đơn không tích lũy thời gian. Khi CPU bận,
+hãy tắt các chức năng nhận diện khác để tăng tần suất phân tích.
+Bản này chỉ cảnh báo bằng giao diện, chưa có âm thanh, PERCLOS hay nhận diện ngáp.
+Không sử dụng làm hệ thống an toàn duy nhất khi lái xe; kiểm thử khi xe đứng yên.
+Kính tối màu và che khuất vẫn có thể gây dự đoán sai dù có kiểm tra chất lượng.
+
+## Phát hiện khói thuốc (thử nghiệm)
+
+`backend/models/smoking-detection.pt` là checkpoint YOLO đã tải từ model
+Apache-2.0 [basant18/Smoking-detection-YOLO26s](https://huggingface.co/basant18/Smoking-detection-YOLO26s).
+Kiểm tra checkpoint cho thấy class thực tế là `smoke`; do đó giao diện chỉ báo
+vùng khói, không khẳng định một người đang hút thuốc. Bật **Phát hiện khói thuốc**
+trên từng camera để chạy detector này. Dùng `SMOKING_MODEL` và
+`SMOKING_CONFIDENCE` (mặc định `0.50`) để đổi checkpoint hoặc ngưỡng.

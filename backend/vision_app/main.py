@@ -17,6 +17,9 @@ from .auth import AuthStore, UserExistsError
 from .config import settings
 from .detector import detector
 from .faces import face_store
+from .poses import pose_detector
+from .drowsiness import drowsiness_detector
+from .smoking import smoking_detector
 from .gestures import gesture_detector
 from .home_assistant import home_assistant_controller
 from .image_utils import decode_upload
@@ -114,7 +117,9 @@ async def health() -> dict:
     return {
         "status": "ok",
         "modelLoaded": detector._model is not None,
+        "smokingModelLoaded": smoking_detector._model is not None,
         "faceEngine": "opencv-yunet-sface",
+        "poseModelLoaded": pose_detector._model is not None,
         "gestureEngine": "mediapipe",
         "gestureModelLoaded": gesture_detector._recognizer is not None,
     }
@@ -240,6 +245,9 @@ async def analyze(
     detect_gestures: bool = Form(True),
     control_home: bool = Form(False),
     tracking_id: str = Form(""),
+    detect_poses: bool = Form(False),
+    detect_drowsiness: bool = Form(False),
+    detect_smoking: bool = Form(False),
 ) -> dict:
     frame, _ = await decode_upload(image)
     started = perf_counter()
@@ -256,12 +264,35 @@ async def analyze(
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"Object detector unavailable: {error}") from error
 
+    smoking = []
+    if detect_smoking:
+        try:
+            smoking = await asyncio.to_thread(smoking_detector.detect, frame)
+        except Exception as error:
+            warnings.append(f"Smoking detector unavailable: {error}")
+
     faces = []
     if recognize_faces:
         try:
             faces = face_store.recognize(frame, clean_tracking_id)
         except Exception as error:
             warnings.append(f"Face recognition unavailable: {error}")
+
+    drowsiness = None
+    if detect_drowsiness:
+        try:
+            session = f"{_user['id']}:{clean_tracking_id}" if clean_tracking_id else None
+            drowsiness = await asyncio.to_thread(drowsiness_detector.detect, frame, session)
+        except Exception as error:
+            drowsiness = {"status": "insufficient_data", "alert": False, "message": "Không thể phân tích mắt."}
+            warnings.append(f"Drowsiness detector unavailable: {error}")
+
+    poses = []
+    if detect_poses:
+        try:
+            poses = await asyncio.to_thread(pose_detector.detect, frame)
+        except Exception as error:
+            warnings.append(f"Pose detection unavailable: {error}")
 
     hands = []
     if detect_gestures:
@@ -289,8 +320,11 @@ async def analyze(
     return {
         "image": {"width": width, "height": height},
         "detections": detections,
+        "smoking": smoking,
         "faces": faces,
         "hands": hands,
+        "poses": poses,
+        "drowsiness": drowsiness,
         "homeControl": home_control,
         "warnings": warnings,
         "processingMs": round((perf_counter() - started) * 1000),

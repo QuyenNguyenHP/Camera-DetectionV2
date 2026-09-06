@@ -5,8 +5,8 @@ This bundle builds one CPU-only Docker image containing:
 - The production React frontend.
 - The FastAPI backend.
 - All Python runtime libraries.
-- YOLO-World, YuNet and SFace model files.
-- MediaPipe hand gesture recognition and its offline model.
+- YOLO-World, YOLO pose, smoke detection, YuNet and SFace model files.
+- MediaPipe hand gesture recognition and Face Landmarker models.
 - Runtime defaults from `runtime.env`.
 
 After the image archive is built and copied, the target PC only needs Docker. It
@@ -27,8 +27,8 @@ The first build requires Internet access to download base images and install
 Node/Python packages. It creates:
 
 ```text
-docker_camera_detection/camera-detection-1.1.0-cpu.tar
-docker_camera_detection/camera-detection-1.1.0-cpu.tar.sha256
+docker_camera_detection/camera-detection-1.2.0-cpu.tar
+docker_camera_detection/camera-detection-1.2.0-cpu.tar.sha256
 ```
 
 The archive contains the application, CPU-only runtime libraries, and all four
@@ -36,7 +36,7 @@ model files. PyTorch is installed from its official CPU wheel index; CUDA,
 cuDNN, NVIDIA runtime packages and build-only Git tools are excluded from the
 final image. OpenCV also uses its headless package because the browser provides
 the user interface.
-Before exporting, the script loads YOLO-World, YuNet, SFace and MediaPipe inside the image,
+Before exporting, the script loads YOLO-World, pose, smoke, YuNet, SFace and MediaPipe models inside the image,
 starts a temporary container, and verifies the packaged API health endpoint.
 The target-PC script verifies the SHA-256 checksum before loading the archive.
 
@@ -47,6 +47,17 @@ TARGET_PLATFORM=linux/arm64 ./docker_camera_detection/build_and_export.sh
 ```
 
 Only use ARM64 when every Python dependency supports the target platform.
+
+### Run locally without creating an archive
+
+To build the current source and restart the local container directly, run:
+
+```bash
+./docker_camera_detection/build_and_run.sh
+```
+
+The app is served at `http://localhost:8080`. This command uses Docker Compose
+and does not create a `.tar` archive.
 
 ## 2. Copy to another PC
 
@@ -243,8 +254,8 @@ curl http://127.0.0.1:8080/api/health
 Nếu Docker báo thiếu image, hãy load archive trước:
 
 ```bash
-sha256sum -c camera-detection-1.1.0-cpu.tar.sha256
-docker load -i camera-detection-1.1.0-cpu.tar
+sha256sum -c camera-detection-1.2.0-cpu.tar.sha256
+docker load -i camera-detection-1.2.0-cpu.tar
 docker compose up -d
 ```
 

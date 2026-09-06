@@ -57,6 +57,9 @@ export async function analyzeImage(
   detectGestures,
   controlHome,
   trackingId = "",
+  detectPoses = false,
+  detectDrowsiness = false,
+  detectSmoking = false,
 ) {
   const form = new FormData();
   form.append("image", blob, "frame.jpg");
@@ -66,6 +69,9 @@ export async function analyzeImage(
   form.append("detect_gestures", String(detectGestures));
   form.append("control_home", String(controlHome));
   form.append("tracking_id", trackingId);
+  form.append("detect_poses", String(detectPoses));
+  form.append("detect_drowsiness", String(detectDrowsiness));
+  form.append("detect_smoking", String(detectSmoking));
   return request("/analyze", { method: "POST", body: form });
 }
 

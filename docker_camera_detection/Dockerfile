@@ -49,7 +49,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CUDA_VISIBLE_DEVICES=-1 \
     YOLO_CONFIG_DIR=/tmp/ultralytics \
     MPLCONFIGDIR=/tmp/matplotlib \
-    YOLO_MODEL=yolov8s-worldv2.pt \
+    YOLO_MODEL=models/yolov8s-worldv2.pt \
     YOLO_DEVICE=cpu \
     FACE_STORE=data/faces.json \
     FACE_PHOTO_DIR=data/people \
@@ -58,7 +58,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AUTH_COOKIE_NAME=__Host-camera_session \
     AUTH_COOKIE_SECURE=true \
     YUNET_MODEL=models/face_detection_yunet_2023mar.onnx \
-    SFACE_MODEL=models/face_recognition_sface_2021dec.onnx
+    SFACE_MODEL=models/face_recognition_sface_2021dec.onnx \
+    POSE_MODEL=models/yolo26n-pose.pt \
+    FACE_LANDMARKER_MODEL=models/face_landmarker.task \
+    SMOKING_MODEL=models/smoking-detection.pt
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y libegl1 libgles2 libglib2.0-0 libgomp1 \
@@ -69,7 +72,6 @@ COPY --from=python-builder /opt/venv /opt/venv
 
 COPY backend/vision_app ./vision_app
 COPY backend/models ./models
-COPY backend/yolov8s-worldv2.pt ./yolov8s-worldv2.pt
 COPY docker_camera_detection/deployment_app.py ./deployment_app.py
 COPY --from=frontend-builder /build/frontend/dist /app/frontend
 

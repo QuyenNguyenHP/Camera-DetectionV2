@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 IMAGE_NAME=${IMAGE_NAME:-camera-detection}
-IMAGE_VERSION=${IMAGE_VERSION:-1.1.0-cpu}
+IMAGE_VERSION=${IMAGE_VERSION:-1.2.0-cpu}
 ARCHIVE_PATH=${ARCHIVE_PATH:-$SCRIPT_DIR/camera-detection-$IMAGE_VERSION.tar}
 
 command -v docker >/dev/null 2>&1 || {

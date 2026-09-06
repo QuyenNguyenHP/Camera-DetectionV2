@@ -14,7 +14,12 @@ def _env_bool(name: str, default: str) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    model_name: str = os.getenv("YOLO_MODEL", "yolov8s-worldv2.pt")
+    smoking_model: Path = Path(os.getenv("SMOKING_MODEL", str(Path(__file__).resolve().parents[1] / "models" / "smoking-detection.pt")))
+    smoking_confidence: float = float(os.getenv("SMOKING_CONFIDENCE", "0.50"))
+    face_landmarker_model: Path = Path(os.getenv("FACE_LANDMARKER_MODEL", str(Path(__file__).resolve().parents[1] / "models/face_landmarker.task")))
+    drowsiness_closed_seconds: float = max(0.5, float(os.getenv("DROWSINESS_CLOSED_SECONDS", "2.0")))
+    pose_model: Path = Path(os.getenv("POSE_MODEL", str(Path(__file__).resolve().parents[1] / "models" / "yolo26n-pose.pt")))
+    model_name: str = os.getenv("YOLO_MODEL", str(Path(__file__).resolve().parents[1] / "models" / "yolov8s-worldv2.pt"))
     yolo_device: str = os.getenv("YOLO_DEVICE", "cpu")
     confidence: float = float(os.getenv("DETECTION_CONFIDENCE", "0.30"))
     max_upload_bytes: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))

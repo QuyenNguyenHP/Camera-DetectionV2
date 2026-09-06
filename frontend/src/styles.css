@@ -490,3 +490,14 @@ footer i { width: 3px; height: 3px; border-radius: 50%; background: #71849d; }
   footer { flex-wrap: wrap; }
   .detection-box span { top: 0; }
 }
+
+.camera-layout-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 18px; }
+.camera-layout-controls > span { color: var(--muted); font-size: 13px; }
+.camera-grid { display: grid; gap: 24px; }
+.camera-grid > .workspace { min-width: 0; }
+.camera-grid-multiple { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.camera-grid-multiple > .workspace { grid-template-columns: minmax(0, 1fr); }
+.camera-grid-multiple .stage { min-height: 240px; }
+@media (max-width: 900px) {
+  .camera-grid-multiple { grid-template-columns: minmax(0, 1fr); }
+}

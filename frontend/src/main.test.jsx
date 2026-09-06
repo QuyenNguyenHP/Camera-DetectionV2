@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeImage, getAuthStatus, getCurrentUser, loginUser } from "./api.js";
 import { MainPage } from "./main.jsx";
@@ -35,6 +35,44 @@ describe("Frontend entry point", () => {
     render(<MainPage />);
     expect(await screen.findByText("Start camera")).toBeInTheDocument();
     expect(screen.getByText("Upload image")).toBeInTheDocument();
+  });
+
+  it("displays one to four independent camera views and releases removed streams", async () => {
+    const tracks = [1, 2].map((id) => ({ stop: vi.fn(), getSettings: () => ({ deviceId: `camera-${id}` }) }));
+    const getUserMedia = vi.fn().mockImplementation(async ({ video }) => {
+      const track = tracks[video.deviceId?.exact === "camera-2" ? 1 : 0];
+      return { getTracks: () => [track], getVideoTracks: () => [track] };
+    });
+    vi.stubGlobal("navigator", { mediaDevices: {
+      enumerateDevices: vi.fn().mockResolvedValue(tracks.map((_, index) => ({
+        kind: "videoinput", deviceId: `camera-${index + 1}`, label: `Device ${index + 1}`,
+      }))),
+      getUserMedia,
+    } });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(<MainPage />);
+    const count = await screen.findByLabelText("Number of cameras");
+    for (const value of [2, 3, 4]) {
+      fireEvent.change(count, { target: { value: String(value) } });
+      expect(screen.getAllByRole("region", { name: /^Camera \d$/ })).toHaveLength(value);
+    }
+    const first = within(screen.getByRole("region", { name: "Camera 1" }));
+    const second = within(screen.getByRole("region", { name: "Camera 2" }));
+    await second.findByRole("option", { name: "Device 2" });
+    fireEvent.change(second.getByLabelText("Chọn camera"), { target: { value: "camera-2" } });
+    fireEvent.click(first.getByRole("button", { name: "Start camera" }));
+    fireEvent.click(second.getByRole("button", { name: "Start camera" }));
+    await first.findByRole("button", { name: "Live scan" });
+    await second.findByRole("button", { name: "Live scan" });
+    expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
+      video: expect.objectContaining({ deviceId: { exact: "camera-2" } }),
+    }));
+    fireEvent.change(count, { target: { value: "1" } });
+    expect(tracks[1].stop).toHaveBeenCalledOnce();
+    expect(tracks[0].stop).not.toHaveBeenCalled();
+    expect(first.getByRole("button", { name: "Live scan" })).toBeInTheDocument();
+    cleanup();
+    expect(tracks[0].stop).toHaveBeenCalledOnce();
   });
 
   it("uses the login page as the main page when no session exists", async () => {

@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 IMAGE_NAME=${IMAGE_NAME:-camera-detection}
-IMAGE_VERSION=${IMAGE_VERSION:-1.1.0-cpu}
+IMAGE_VERSION=${IMAGE_VERSION:-1.2.0-cpu}
 TARGET_PLATFORM=${TARGET_PLATFORM:-linux/amd64}
 ARCHIVE_PATH="$SCRIPT_DIR/camera-detection-$IMAGE_VERSION.tar"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
@@ -16,10 +16,13 @@ command -v docker >/dev/null 2>&1 || {
 }
 
 for REQUIRED_FILE in \
-  "$PROJECT_DIR/backend/yolov8s-worldv2.pt" \
+  "$PROJECT_DIR/backend/models/yolov8s-worldv2.pt" \
   "$PROJECT_DIR/backend/models/face_detection_yunet_2023mar.onnx" \
   "$PROJECT_DIR/backend/models/face_recognition_sface_2021dec.onnx" \
-  "$PROJECT_DIR/backend/models/gesture_recognizer.task"
+  "$PROJECT_DIR/backend/models/gesture_recognizer.task" \
+  "$PROJECT_DIR/backend/models/yolo26n-pose.pt" \
+  "$PROJECT_DIR/backend/models/face_landmarker.task" \
+  "$PROJECT_DIR/backend/models/smoking-detection.pt"
 do
   if [ ! -f "$REQUIRED_FILE" ]; then
     echo "Required model is missing: $REQUIRED_FILE" >&2
@@ -42,7 +45,10 @@ import cv2, torch, ultralytics, clip, mediapipe; \
 from vision_app.detector import detector; \
 from vision_app.faces import face_store; \
 from vision_app.gestures import gesture_detector; \
-required = [Path('yolov8s-worldv2.pt'), Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx'), Path('models/gesture_recognizer.task')]; \
+from vision_app.poses import pose_detector; \
+from vision_app.drowsiness import drowsiness_detector; \
+from vision_app.smoking import smoking_detector; \
+required = [Path('models/yolov8s-worldv2.pt'), Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx'), Path('models/gesture_recognizer.task'), Path('models/yolo26n-pose.pt'), Path('models/face_landmarker.task'), Path('models/smoking-detection.pt')]; \
 assert all(path.is_file() and path.stat().st_size > 0 for path in required); \
 cuda_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('nvidia-')); \
 triton_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('triton')); \
@@ -52,7 +58,10 @@ assert not triton_packages, f'Triton packages detected: {triton_packages}'; \
 detector._load(); \
 face_store._load_models(); \
 gesture_detector._load(); \
-print(f'CPU-only libraries and YOLO/YuNet/SFace/MediaPipe models loaded successfully (torch={torch.__version__})')"
+pose_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
+drowsiness_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
+smoking_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
+print(f'CPU-only libraries and all packaged YOLO/MediaPipe models loaded successfully (torch={torch.__version__})')"
 
 docker rm -f "$VALIDATION_CONTAINER" >/dev/null 2>&1 || true
 cleanup_validation() {

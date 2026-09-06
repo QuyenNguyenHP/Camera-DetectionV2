@@ -9,9 +9,10 @@ import { captureVideoFrame, getAvailableCameras } from "../utils/camera.js";
 
 const INITIAL_CLASSES = "person, car, backpack, cell phone";
 
-export default function ScanPage({ user, onNavigate, onLogout }) {
+function CameraWorkspace({ cameraNumber }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const cameraRequest = useRef(0);
   const fileRef = useRef(null);
   const inFlight = useRef(false);
   const trackingSession = useRef("");
@@ -20,6 +21,9 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
   const [classes, setClasses] = useState(INITIAL_CLASSES);
   const [detectObjects, setDetectObjects] = useState(true);
   const [recognizeFaces, setRecognizeFaces] = useState(true);
+  const [detectDrowsiness, setDetectDrowsiness] = useState(false);
+  const [detectSmoking, setDetectSmoking] = useState(false);
+  const [detectPoses, setDetectPoses] = useState(false);
   const [detectGestures, setDetectGestures] = useState(true);
   const [controlHome, setControlHome] = useState(false);
   const [live, setLive] = useState(false);
@@ -33,6 +37,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
   const [error, setError] = useState("");
 
   const stopCamera = useCallback(() => {
+    cameraRequest.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraReady(false);
@@ -93,10 +98,15 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
           : "Camera chỉ hoạt động trên localhost hoặc kết nối HTTPS");
       }
       stopCamera();
+      const request = cameraRequest.current;
       const videoConstraints = deviceId
         ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
         : { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      if (request !== cameraRequest.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       trackingSession.current = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 
@@ -106,6 +116,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       } catch {
         // The active stream remains usable if device enumeration is unavailable.
       }
+      if (request !== cameraRequest.current) return;
       setSelectedCameraId(activeDeviceId || "");
       setCameraVersion((version) => version + 1);
       setMode("camera");
@@ -161,6 +172,9 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
         detectGestures,
         controlHome,
         mode === "camera" ? trackingSession.current : "",
+        detectPoses,
+        detectDrowsiness,
+        detectSmoking,
       ));
     } catch (err) {
       setError(err.message);
@@ -169,7 +183,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       inFlight.current = false;
       setBusy(false);
     }
-  }, [classes, controlHome, currentFrame, detectGestures, detectObjects, mode, recognizeFaces]);
+  }, [classes, controlHome, currentFrame, detectDrowsiness, detectSmoking, detectPoses, detectGestures, detectObjects, mode, recognizeFaces]);
 
   useEffect(() => {
     if (!live || mode !== "camera") return undefined;
@@ -196,21 +210,23 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
     return () => clearTimeout(timer);
   }, [result]);
 
-  const people = result?.detections?.filter((item) => item.label === "person").length || 0;
+  useEffect(() => {
+    if (!result?.drowsiness || (result.drowsiness.status === "insufficient_data" && !result.drowsiness.eyes?.length)) return undefined;
+    const timer = setTimeout(() => setResult((current) => current === result
+      ? { ...current, drowsiness: { status: "insufficient_data", alert: false, message: "Chưa có khung hình mới để xác nhận trạng thái mắt." } }
+      : current), 2000);
+    return () => clearTimeout(timer);
+  }, [result]);
+
+  const people = Math.max(result?.detections?.filter((item) => item.label === "person").length || 0, result?.poses?.length || 0);
   const knownFaces = result?.faces?.filter((face) => face.name !== "Unknown").length || 0;
 
   return (
-    <main>
-      <Header page="scan" user={user} onNavigate={onNavigate} onLogout={onLogout} />
-      <section className="hero-copy">
-        <div>
-          <p className="eyebrow"><Sparkles size={14} /> DQ TECH</p>
-          <h2>Recognize people, objects and hand gestures</h2>
-        </div>
-        <p>A Product under the development of DQ TECH</p>
-      </section>
-      <section className="workspace">
+      <section className="workspace" aria-label={`Camera ${cameraNumber}`}>
         <CameraBox
+          detectDrowsiness={detectDrowsiness}
+          detectSmoking={detectSmoking}
+          cameraNumber={cameraNumber}
           mode={mode}
           imageUrl={imageUrl}
           videoRef={videoRef}
@@ -233,6 +249,18 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
           objectCount={result?.detections?.length || 0}
           handCount={result?.hands?.length || 0}
           classes={classes}
+          detectDrowsiness={detectDrowsiness}
+          detectSmoking={detectSmoking}
+          drowsiness={live ? result?.drowsiness : null}
+          smokingCount={result?.smoking?.length || 0}
+          onDetectSmokingChange={(event) => setDetectSmoking(event.target.checked)}
+          onDetectDrowsinessChange={(event) => {
+            setDetectDrowsiness(event.target.checked);
+            trackingSession.current = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+            setResult(null);
+          }}
+          detectPoses={detectPoses}
+          onDetectPosesChange={(event) => setDetectPoses(event.target.checked)}
           detectObjects={detectObjects}
           recognizeFaces={recognizeFaces}
           detectGestures={detectGestures}
@@ -251,6 +279,40 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
           }}
         />
       </section>
+
+  );
+}
+
+export default function ScanPage({ user, onNavigate, onLogout }) {
+  const [cameraCount, setCameraCount] = useState(1);
+
+  return (
+    <main>
+      <Header page="scan" user={user} onNavigate={onNavigate} onLogout={onLogout} />
+      <section className="hero-copy">
+        <div>
+          <p className="eyebrow"><Sparkles size={14} /> DQ TECH</p>
+          <h2>Recognize people, objects and hand gestures</h2>
+        </div>
+        <p>A Product under the development of DQ TECH</p>
+      </section>
+      <div className="camera-layout-controls">
+        <label className="camera-picker">
+          Display
+          <select aria-label="Number of cameras" value={cameraCount}
+            onChange={(event) => setCameraCount(Number(event.target.value))}>
+            {[1, 2, 3, 4].map((count) => (
+              <option key={count} value={count}>{count} {count === 1 ? "camera" : "cameras"}</option>
+            ))}
+          </select>
+        </label>
+        <span>Select a device and start each camera separately.</span>
+      </div>
+      <div className={`camera-grid${cameraCount > 1 ? " camera-grid-multiple" : ""}`}>
+        {Array.from({ length: cameraCount }, (_, index) => (
+          <CameraWorkspace key={index} cameraNumber={index + 1} />
+        ))}
+      </div>
       <Footer items={["YOLO-WORLD", "YUNET + SFACE ONNX", "MEDIAPIPE GESTURES"]} />
     </main>
   );

@@ -7,6 +7,14 @@ export default function ObservationSidebar({
   objectCount,
   handCount,
   classes,
+  detectDrowsiness,
+  onDetectDrowsinessChange,
+  drowsiness,
+  detectSmoking,
+  smokingCount,
+  onDetectSmokingChange,
+  detectPoses,
+  onDetectPosesChange,
   detectObjects,
   recognizeFaces,
   detectGestures,
@@ -49,6 +57,24 @@ export default function ObservationSidebar({
             </span>
           ))}
         </div>
+        <label className="toggle-row">
+          <div><b>Theo dõi buồn ngủ</b><span>Theo dõi mắt khi bật Live scan</span></div>
+          <input aria-label="Theo dõi buồn ngủ" type="checkbox" checked={detectDrowsiness} onChange={onDetectDrowsinessChange} />
+        </label>
+        {detectDrowsiness && <div role={drowsiness?.alert ? "alert" : "status"} className={`message ${drowsiness?.alert ? "error" : "warning"}`}>
+          <div><b>{drowsiness?.alert ? "Cảnh báo: nghi buồn ngủ" : drowsiness?.status === "eyes_open" ? "Mắt đang mở" : drowsiness?.status === "eyes_closed" ? "Mắt đang nhắm" : "Không đủ dữ liệu"}</b>
+          <p>{drowsiness?.message || "Bật Live scan và nhìn vào camera. Đây là tính năng thử nghiệm."}</p>
+          {drowsiness?.closedSeconds != null && <p>Nhắm mắt liên tục: {drowsiness.closedSeconds} giây</p>}</div>
+        </div>}
+        <label className="toggle-row">
+          <div><b>Phát hiện khói thuốc</b><span>Phát hiện dấu hiệu khói bằng model riêng</span></div>
+          <input aria-label="Phát hiện khói thuốc" type="checkbox" checked={detectSmoking} onChange={onDetectSmokingChange} />
+        </label>
+        {detectSmoking && <div className="message warning" role="status">Phát hiện: {smokingCount} vùng khói. Không đủ để kết luận một người đang hút thuốc.</div>}
+        <label className="toggle-row">
+          <div><b>Body pose</b><span>Show body keypoints and skeletons</span></div>
+          <input aria-label="Enable body pose detection" type="checkbox" checked={detectPoses} onChange={onDetectPosesChange} />
+        </label>
         <label className="toggle-row">
           <div><b>Object detection</b><span>Detect configured object classes</span></div>
           <input aria-label="Enable object detection" type="checkbox" checked={detectObjects} onChange={onDetectObjectsChange} />
