@@ -7,32 +7,19 @@ import Header from "../components/Header.jsx";
 import ObservationSidebar from "../components/ObservationSidebar.jsx";
 import { captureVideoFrame, getAvailableCameras } from "../utils/camera.js";
 
-const INITIAL_CLASSES = "person, car, backpack, cell phone";
-
-function CameraWorkspace({ cameraNumber }) {
+function CameraWorkspace({ cameraNumber, recognizeFaces, notifyHome, onObservation, onHomeNotification }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const cameraRequest = useRef(0);
-  const fileRef = useRef(null);
   const inFlight = useRef(false);
   const trackingSession = useRef("");
   const [mode, setMode] = useState("empty");
-  const [imageUrl, setImageUrl] = useState("");
-  const [classes, setClasses] = useState(INITIAL_CLASSES);
-  const [detectObjects, setDetectObjects] = useState(true);
-  const [recognizeFaces, setRecognizeFaces] = useState(true);
-  const [detectDrowsiness, setDetectDrowsiness] = useState(false);
-  const [detectSmoking, setDetectSmoking] = useState(false);
-  const [detectPoses, setDetectPoses] = useState(false);
-  const [detectGestures, setDetectGestures] = useState(true);
-  const [controlHome, setControlHome] = useState(false);
   const [live, setLive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
   const [result, setResult] = useState(null);
-  const [homeNotification, setHomeNotification] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,10 +32,6 @@ function CameraWorkspace({ cameraNumber }) {
   }, []);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
-  useEffect(() => () => {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-  }, [imageUrl]);
-
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return undefined;
     const loadCameras = async () => {
@@ -74,6 +57,7 @@ function CameraWorkspace({ cameraNumber }) {
       try {
         await video.play();
         setCameraReady(true);
+        setLive(true);
       } catch (err) {
         setCameraReady(false);
         setError(`Không thể phát camera: ${err.message}`);
@@ -136,26 +120,13 @@ function CameraWorkspace({ cameraNumber }) {
   const changeCamera = async (event) => {
     const deviceId = event.target.value;
     setSelectedCameraId(deviceId);
-    if (mode === "camera") await openCamera(deviceId);
-  };
-
-  const selectFile = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    stopCamera();
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    fileRef.current = file;
-    setImageUrl(URL.createObjectURL(file));
-    setMode("image");
-    setResult(null);
-    setError("");
+    await openCamera(deviceId);
   };
 
   const currentFrame = useCallback(async () => {
-    if (mode === "image" && fileRef.current) return fileRef.current;
-    if (mode !== "camera") throw new Error("Wait for the camera preview to appear");
+    if (!streamRef.current || !videoRef.current) return null;
     return captureVideoFrame(videoRef.current, 960, 0.9);
-  }, [mode]);
+  }, []);
 
   const scan = useCallback(async () => {
     if (inFlight.current || mode === "empty") return;
@@ -164,17 +135,12 @@ function CameraWorkspace({ cameraNumber }) {
     setError("");
     try {
       const blob = await currentFrame();
+      if (!blob) return;
       setResult(await analyzeImage(
         blob,
-        classes,
-        detectObjects,
         recognizeFaces,
-        detectGestures,
-        controlHome,
-        mode === "camera" ? trackingSession.current : "",
-        detectPoses,
-        detectDrowsiness,
-        detectSmoking,
+        notifyHome,
+        trackingSession.current,
       ));
     } catch (err) {
       setError(err.message);
@@ -183,10 +149,10 @@ function CameraWorkspace({ cameraNumber }) {
       inFlight.current = false;
       setBusy(false);
     }
-  }, [classes, controlHome, currentFrame, detectDrowsiness, detectSmoking, detectPoses, detectGestures, detectObjects, mode, recognizeFaces]);
+  }, [currentFrame, mode, notifyHome, recognizeFaces]);
 
   useEffect(() => {
-    if (!live || mode !== "camera") return undefined;
+    if (!live || mode !== "camera" || !cameraReady) return undefined;
     let cancelled = false;
     let timer;
     const scanNextFrame = async () => {
@@ -198,85 +164,38 @@ function CameraWorkspace({ cameraNumber }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [live, mode, scan]);
+  }, [cameraReady, live, mode, scan]);
 
   useEffect(() => {
     if (result?.homeControl?.status !== "executed") return undefined;
-    setHomeNotification({
-      action: result.homeControl.action,
-      entityId: result.homeControl.entityId,
+    onHomeNotification({
+      cameraNumber,
+      event: result.homeControl.event,
+      trackIds: result.homeControl.trackIds,
     });
-    const timer = setTimeout(() => setHomeNotification(null), 3000);
-    return () => clearTimeout(timer);
-  }, [result]);
+  }, [cameraNumber, onHomeNotification, result]);
 
   useEffect(() => {
-    if (!result?.drowsiness || (result.drowsiness.status === "insufficient_data" && !result.drowsiness.eyes?.length)) return undefined;
-    const timer = setTimeout(() => setResult((current) => current === result
-      ? { ...current, drowsiness: { status: "insufficient_data", alert: false, message: "Chưa có khung hình mới để xác nhận trạng thái mắt." } }
-      : current), 2000);
-    return () => clearTimeout(timer);
-  }, [result]);
+    onObservation(cameraNumber, { result, error });
+  }, [cameraNumber, error, onObservation, result]);
 
-  const people = Math.max(result?.detections?.filter((item) => item.label === "person").length || 0, result?.poses?.length || 0);
-  const knownFaces = result?.faces?.filter((face) => face.name !== "Unknown").length || 0;
+  useEffect(() => () => onObservation(cameraNumber, null), [cameraNumber, onObservation]);
 
   return (
-      <section className="workspace" aria-label={`Camera ${cameraNumber}`}>
+      <section className="camera-workspace" aria-label={`Camera ${cameraNumber}`}>
         <CameraBox
-          detectDrowsiness={detectDrowsiness}
-          detectSmoking={detectSmoking}
           cameraNumber={cameraNumber}
           mode={mode}
-          imageUrl={imageUrl}
           videoRef={videoRef}
           cameraReady={cameraReady}
           result={result}
-          classes={classes}
           cameras={cameras}
           selectedCameraId={selectedCameraId}
           busy={busy}
           live={live}
           onStartCamera={startCamera}
           onChangeCamera={changeCamera}
-          onUpload={selectFile}
-          onScan={scan}
           onToggleLive={() => setLive(!live)}
-        />
-        <ObservationSidebar
-          people={people}
-          knownFaces={knownFaces}
-          objectCount={result?.detections?.length || 0}
-          handCount={result?.hands?.length || 0}
-          classes={classes}
-          detectDrowsiness={detectDrowsiness}
-          detectSmoking={detectSmoking}
-          drowsiness={live ? result?.drowsiness : null}
-          smokingCount={result?.smoking?.length || 0}
-          onDetectSmokingChange={(event) => setDetectSmoking(event.target.checked)}
-          onDetectDrowsinessChange={(event) => {
-            setDetectDrowsiness(event.target.checked);
-            trackingSession.current = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-            setResult(null);
-          }}
-          detectPoses={detectPoses}
-          onDetectPosesChange={(event) => setDetectPoses(event.target.checked)}
-          detectObjects={detectObjects}
-          recognizeFaces={recognizeFaces}
-          detectGestures={detectGestures}
-          controlHome={controlHome}
-          homeNotification={homeNotification}
-          warnings={result?.warnings || []}
-          error={error}
-          onClassesChange={(event) => setClasses(event.target.value)}
-          onDetectObjectsChange={(event) => setDetectObjects(event.target.checked)}
-          onRecognizeFacesChange={(event) => setRecognizeFaces(event.target.checked)}
-          onDetectGesturesChange={(event) => setDetectGestures(event.target.checked)}
-          onControlHomeChange={(event) => {
-            const enabled = event.target.checked;
-            setControlHome(enabled);
-            if (enabled) setDetectGestures(true);
-          }}
         />
       </section>
 
@@ -285,6 +204,43 @@ function CameraWorkspace({ cameraNumber }) {
 
 export default function ScanPage({ user, onNavigate, onLogout }) {
   const [cameraCount, setCameraCount] = useState(1);
+  const [recognizeFaces, setRecognizeFaces] = useState(true);
+  const [notifyHome, setNotifyHome] = useState(true);
+  const [observations, setObservations] = useState({});
+  const [homeNotification, setHomeNotification] = useState(null);
+
+  const updateObservation = useCallback((cameraNumber, observation) => {
+    setObservations((current) => {
+      if (observation === null) {
+        const next = { ...current };
+        delete next[cameraNumber];
+        return next;
+      }
+      return { ...current, [cameraNumber]: observation };
+    });
+  }, []);
+
+  const showHomeNotification = useCallback((notification) => {
+    setHomeNotification(notification);
+  }, []);
+
+  useEffect(() => {
+    if (!homeNotification) return undefined;
+    const timer = setTimeout(() => setHomeNotification(null), 3000);
+    return () => clearTimeout(timer);
+  }, [homeNotification]);
+
+  const activeObservations = Object.entries(observations)
+    .filter(([cameraNumber]) => Number(cameraNumber) <= cameraCount)
+    .map(([cameraNumber, observation]) => ({ cameraNumber, ...observation }));
+  const people = activeObservations.reduce((total, item) => total + (item.result?.poses?.length || 0), 0);
+  const knownFaces = activeObservations.reduce((total, item) => total
+    + (item.result?.faces?.filter((face) => face.name !== "Unknown").length || 0), 0);
+  const fallCount = activeObservations.reduce((total, item) => total
+    + (item.result?.poses?.filter((pose) => pose.fall?.alert).length || 0), 0);
+  const warnings = activeObservations.flatMap((item) =>
+    (item.result?.warnings || []).map((warning) => `Camera ${item.cameraNumber}: ${warning}`));
+  const errors = activeObservations.map((item) => item.error && `Camera ${item.cameraNumber}: ${item.error}`).filter(Boolean);
 
   return (
     <main>
@@ -292,7 +248,7 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
       <section className="hero-copy">
         <div>
           <p className="eyebrow"><Sparkles size={14} /> DQ TECH</p>
-          <h2>Recognize people, objects and hand gestures</h2>
+          <h2>Phát hiện người bị ngã và nhận diện khuôn mặt</h2>
         </div>
         <p>A Product under the development of DQ TECH</p>
       </section>
@@ -306,14 +262,30 @@ export default function ScanPage({ user, onNavigate, onLogout }) {
             ))}
           </select>
         </label>
-        <span>Select a device and start each camera separately.</span>
+        <span>Chọn thiết bị; phân tích sẽ tự động bắt đầu khi camera sẵn sàng.</span>
       </div>
-      <div className={`camera-grid${cameraCount > 1 ? " camera-grid-multiple" : ""}`}>
-        {Array.from({ length: cameraCount }, (_, index) => (
-          <CameraWorkspace key={index} cameraNumber={index + 1} />
-        ))}
+      <div className="monitoring-layout">
+        <div className={`camera-grid${cameraCount > 1 ? " camera-grid-multiple" : ""}`}>
+          {Array.from({ length: cameraCount }, (_, index) => (
+            <CameraWorkspace key={index} cameraNumber={index + 1}
+              recognizeFaces={recognizeFaces} notifyHome={notifyHome}
+              onObservation={updateObservation} onHomeNotification={showHomeNotification} />
+          ))}
+        </div>
+        <ObservationSidebar
+          people={people}
+          knownFaces={knownFaces}
+          fallCount={fallCount}
+          recognizeFaces={recognizeFaces}
+          notifyHome={notifyHome}
+          homeNotification={homeNotification}
+          warnings={warnings}
+          error={errors.join(" · ")}
+          onRecognizeFacesChange={(event) => setRecognizeFaces(event.target.checked)}
+          onNotifyHomeChange={(event) => setNotifyHome(event.target.checked)}
+        />
       </div>
-      <Footer items={["YOLO-WORLD", "YUNET + SFACE ONNX", "MEDIAPIPE GESTURES"]} />
+      <Footer items={["CPU ONLY", "YOLO POSE", "YUNET + SFACE ONNX", "HOME ASSISTANT"]} />
     </main>
   );
 }

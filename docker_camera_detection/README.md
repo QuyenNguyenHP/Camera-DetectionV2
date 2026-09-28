@@ -5,8 +5,7 @@ This bundle builds one CPU-only Docker image containing:
 - The production React frontend.
 - The FastAPI backend.
 - All Python runtime libraries.
-- YOLO-World, YOLO pose, smoke detection, YuNet and SFace model files.
-- MediaPipe hand gesture recognition and Face Landmarker models.
+- YOLO pose, YuNet and SFace model files.
 - Runtime defaults from `runtime.env`.
 
 After the image archive is built and copied, the target PC only needs Docker. It
@@ -31,12 +30,12 @@ docker_camera_detection/camera-detection-1.2.0-cpu.tar
 docker_camera_detection/camera-detection-1.2.0-cpu.tar.sha256
 ```
 
-The archive contains the application, CPU-only runtime libraries, and all four
+The archive contains the application, CPU-only runtime libraries, and all three
 model files. PyTorch is installed from its official CPU wheel index; CUDA,
 cuDNN, NVIDIA runtime packages and build-only Git tools are excluded from the
 final image. OpenCV also uses its headless package because the browser provides
 the user interface.
-Before exporting, the script loads YOLO-World, pose, smoke, YuNet, SFace and MediaPipe models inside the image,
+Before exporting, the script loads the pose, YuNet and SFace models inside the image,
 starts a temporary container, and verifies the packaged API health endpoint.
 The target-PC script verifies the SHA-256 checksum before loading the archive.
 

@@ -15,12 +15,8 @@ from pydantic import BaseModel, Field
 
 from .auth import AuthStore, UserExistsError
 from .config import settings
-from .detector import detector
 from .faces import face_store
 from .poses import pose_detector
-from .drowsiness import drowsiness_detector
-from .smoking import smoking_detector
-from .gestures import gesture_detector
 from .home_assistant import home_assistant_controller
 from .image_utils import decode_upload
 
@@ -95,12 +91,6 @@ def _clean_username(value: str) -> str:
     return username
 
 
-def parse_classes(value: str) -> list[str]:
-    classes = [part.strip().lower() for part in value.split(",") if part.strip()]
-    clean = [item for item in classes if re.fullmatch(r"[a-z0-9][a-z0-9 _-]{0,39}", item)]
-    return clean[:20]
-
-
 def save_enrollment_photo(name: str, frame) -> None:
     """Store a normalized enrollment photo in a safe per-person directory."""
     directory_name = re.sub(r"[^\w-]+", "_", name, flags=re.UNICODE).strip("_") or "person"
@@ -116,12 +106,10 @@ def save_enrollment_photo(name: str, frame) -> None:
 async def health() -> dict:
     return {
         "status": "ok",
-        "modelLoaded": detector._model is not None,
-        "smokingModelLoaded": smoking_detector._model is not None,
         "faceEngine": "opencv-yunet-sface",
         "poseModelLoaded": pose_detector._model is not None,
-        "gestureEngine": "mediapipe",
-        "gestureModelLoaded": gesture_detector._recognizer is not None,
+        "fallDetection": "temporal-pose",
+        "device": "cpu",
     }
 
 
@@ -239,15 +227,9 @@ async def enroll_face(
 async def analyze(
     _user: AuthenticatedUser,
     image: UploadFile = File(...),
-    classes: str = Form("person"),
-    detect_objects: bool = Form(True),
     recognize_faces: bool = Form(True),
-    detect_gestures: bool = Form(True),
-    control_home: bool = Form(False),
+    notify_home: bool = Form(True),
     tracking_id: str = Form(""),
-    detect_poses: bool = Form(False),
-    detect_drowsiness: bool = Form(False),
-    detect_smoking: bool = Form(False),
 ) -> dict:
     frame, _ = await decode_upload(image)
     started = perf_counter()
@@ -257,20 +239,6 @@ async def analyze(
         warnings.append(
             "Dữ liệu khuôn mặt Dlib cũ không tương thích với SFace; hãy đăng ký lại khuôn mặt."
         )
-    detections = []
-    if detect_objects:
-        try:
-            detections = detector.detect(frame, parse_classes(classes), clean_tracking_id)
-        except Exception as error:
-            raise HTTPException(status_code=503, detail=f"Object detector unavailable: {error}") from error
-
-    smoking = []
-    if detect_smoking:
-        try:
-            smoking = await asyncio.to_thread(smoking_detector.detect, frame)
-        except Exception as error:
-            warnings.append(f"Smoking detector unavailable: {error}")
-
     faces = []
     if recognize_faces:
         try:
@@ -278,53 +246,30 @@ async def analyze(
         except Exception as error:
             warnings.append(f"Face recognition unavailable: {error}")
 
-    drowsiness = None
-    if detect_drowsiness:
-        try:
-            session = f"{_user['id']}:{clean_tracking_id}" if clean_tracking_id else None
-            drowsiness = await asyncio.to_thread(drowsiness_detector.detect, frame, session)
-        except Exception as error:
-            drowsiness = {"status": "insufficient_data", "alert": False, "message": "Không thể phân tích mắt."}
-            warnings.append(f"Drowsiness detector unavailable: {error}")
-
     poses = []
-    if detect_poses:
-        try:
-            poses = await asyncio.to_thread(pose_detector.detect, frame)
-        except Exception as error:
-            warnings.append(f"Pose detection unavailable: {error}")
-
-    hands = []
-    if detect_gestures:
-        try:
-            hands = gesture_detector.detect(frame)
-        except Exception as error:
-            warnings.append(f"Hand gesture detection unavailable: {error}")
+    try:
+        poses = await asyncio.to_thread(pose_detector.detect, frame, clean_tracking_id)
+    except Exception as error:
+        warnings.append(f"Fall detector unavailable: {error}")
 
     home_control = {
         "enabled": False,
         "configured": home_assistant_controller.configured,
         "status": "disabled",
     }
-    if control_home:
-        if not detect_gestures:
-            warnings.append("Điều khiển nhà cần bật nhận diện cử chỉ tay.")
-        else:
-            home_control = await asyncio.to_thread(
-                home_assistant_controller.handle, hands, clean_tracking_id
-            )
-            if home_control["status"] == "error":
-                warnings.append(home_control["message"])
+    if notify_home:
+        home_control = await asyncio.to_thread(
+            home_assistant_controller.handle, poses, clean_tracking_id
+        )
+        if home_control["status"] == "error":
+            warnings.append(home_control["message"])
 
     height, width = frame.shape[:2]
     return {
         "image": {"width": width, "height": height},
-        "detections": detections,
-        "smoking": smoking,
         "faces": faces,
-        "hands": hands,
         "poses": poses,
-        "drowsiness": drowsiness,
+        "falls": [pose for pose in poses if pose.get("fall", {}).get("status") != "upright"],
         "homeControl": home_control,
         "warnings": warnings,
         "processingMs": round((perf_counter() - started) * 1000),

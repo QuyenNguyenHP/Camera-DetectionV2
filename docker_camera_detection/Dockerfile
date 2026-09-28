@@ -49,8 +49,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CUDA_VISIBLE_DEVICES=-1 \
     YOLO_CONFIG_DIR=/tmp/ultralytics \
     MPLCONFIGDIR=/tmp/matplotlib \
-    YOLO_MODEL=models/yolov8s-worldv2.pt \
-    YOLO_DEVICE=cpu \
     FACE_STORE=data/faces.json \
     FACE_PHOTO_DIR=data/people \
     AUTH_DATABASE=data/users.db \
@@ -60,8 +58,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     YUNET_MODEL=models/face_detection_yunet_2023mar.onnx \
     SFACE_MODEL=models/face_recognition_sface_2021dec.onnx \
     POSE_MODEL=models/yolo26n-pose.pt \
-    FACE_LANDMARKER_MODEL=models/face_landmarker.task \
-    SMOKING_MODEL=models/smoking-detection.pt
+    POSE_IMAGE_SIZE=512 \
+    POSE_CONFIDENCE=0.45
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y libegl1 libgles2 libglib2.0-0 libgomp1 \

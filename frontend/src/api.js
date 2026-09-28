@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -51,27 +51,15 @@ export async function createUser(username, password, role) {
 
 export async function analyzeImage(
   blob,
-  classes,
-  detectObjects,
   recognizeFaces,
-  detectGestures,
-  controlHome,
+  notifyHome,
   trackingId = "",
-  detectPoses = false,
-  detectDrowsiness = false,
-  detectSmoking = false,
 ) {
   const form = new FormData();
   form.append("image", blob, "frame.jpg");
-  form.append("classes", classes);
-  form.append("detect_objects", String(detectObjects));
   form.append("recognize_faces", String(recognizeFaces));
-  form.append("detect_gestures", String(detectGestures));
-  form.append("control_home", String(controlHome));
+  form.append("notify_home", String(notifyHome));
   form.append("tracking_id", trackingId);
-  form.append("detect_poses", String(detectPoses));
-  form.append("detect_drowsiness", String(detectDrowsiness));
-  form.append("detect_smoking", String(detectSmoking));
   return request("/analyze", { method: "POST", body: form });
 }
 

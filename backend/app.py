@@ -45,7 +45,7 @@ def main() -> None:
     uvicorn.run(
         "vision_app.main:app",
         host=os.getenv("BACKEND_HOST", "127.0.0.1"),
-        port=int(os.getenv("BACKEND_PORT", "8000")),
+        port=int(os.getenv("BACKEND_PORT", "8090")),
         reload=os.getenv("BACKEND_RELOAD", "true").lower() in {"1", "true", "yes"},
     )
 

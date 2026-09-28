@@ -1,21 +1,21 @@
 import { detectionColor } from "../utils/detectionColors.js";
 
-export default function DetectionBox({ item, face = false, hand = false, objectClasses = [] }) {
+export default function DetectionBox({ item, face = false, fall = false, objectClasses = [] }) {
   const { x, y, width, height } = item.box;
-  const label = hand
-    ? `${item.gesture.replaceAll("_", " ")} · ${item.handedness} ${Math.round(item.confidence * 100)}%`
-    : face
+  const fallStatus = item.fall?.status;
+  const label = face
       ? `${item.name}${item.trackId ? ` · #${item.trackId}` : ""}`
+      : fall
+        ? `${fallStatus === "confirmed" ? "ĐÃ XÁC NHẬN NGÃ" : fallStatus === "suspected" ? "Nghi ngã" : "Bình thường"}${item.trackId ? ` · #${item.trackId}` : ""}`
       : `${item.label} ${Math.round(item.confidence * 100)}%`;
-  const boxColor = hand
-    ? "var(--gesture)"
-    : face
+  const boxColor = face
     ? item.name === "Unknown" ? "var(--danger)" : "var(--cyan)"
+    : fallStatus === "confirmed" ? "var(--danger)" : fallStatus === "suspected" ? "var(--gesture)"
     : detectionColor(item.label, objectClasses);
 
   return (
     <div
-      className={`detection-box ${face ? "face-box" : ""} ${hand ? "hand-box" : ""}`}
+      className={`detection-box ${face ? "face-box" : ""}`}
       style={{
         left: `${x * 100}%`,
         top: `${y * 100}%`,

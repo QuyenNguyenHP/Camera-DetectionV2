@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeImage, getAuthStatus, getCurrentUser, loginUser } from "./api.js";
 import { MainPage } from "./main.jsx";
@@ -31,13 +31,15 @@ describe("Frontend entry point", () => {
     vi.clearAllMocks();
   });
 
-  it("offers camera and upload entry points after authentication", async () => {
+  it("offers camera without an image-upload entry point after authentication", async () => {
     render(<MainPage />);
     expect(await screen.findByText("Start camera")).toBeInTheDocument();
-    expect(screen.getByText("Upload image")).toBeInTheDocument();
+    expect(screen.queryByText("Upload image")).not.toBeInTheDocument();
   });
 
   it("displays one to four independent camera views and releases removed streams", async () => {
+    analyzeImage.mockResolvedValue({ poses: [], faces: [], warnings: [], processingMs: 10,
+      homeControl: { status: "idle" } });
     const tracks = [1, 2].map((id) => ({ stop: vi.fn(), getSettings: () => ({ deviceId: `camera-${id}` }) }));
     const getUserMedia = vi.fn().mockImplementation(async ({ video }) => {
       const track = tracks[video.deviceId?.exact === "camera-2" ? 1 : 0];
@@ -50,27 +52,31 @@ describe("Frontend entry point", () => {
       getUserMedia,
     } });
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 640 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 480 });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() });
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["frame"], { type: "image/jpeg" })));
     render(<MainPage />);
     const count = await screen.findByLabelText("Number of cameras");
     for (const value of [2, 3, 4]) {
       fireEvent.change(count, { target: { value: String(value) } });
       expect(screen.getAllByRole("region", { name: /^Camera \d$/ })).toHaveLength(value);
+      expect(screen.getAllByText("Cấu hình giám sát")).toHaveLength(1);
     }
     const first = within(screen.getByRole("region", { name: "Camera 1" }));
     const second = within(screen.getByRole("region", { name: "Camera 2" }));
     await second.findByRole("option", { name: "Device 2" });
     fireEvent.change(second.getByLabelText("Chọn camera"), { target: { value: "camera-2" } });
     fireEvent.click(first.getByRole("button", { name: "Start camera" }));
-    fireEvent.click(second.getByRole("button", { name: "Start camera" }));
-    await first.findByRole("button", { name: "Live scan" });
-    await second.findByRole("button", { name: "Live scan" });
+    await first.findByRole("button", { name: "Dừng phân tích" });
+    await second.findByRole("button", { name: "Dừng phân tích" });
     expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
       video: expect.objectContaining({ deviceId: { exact: "camera-2" } }),
     }));
     fireEvent.change(count, { target: { value: "1" } });
     expect(tracks[1].stop).toHaveBeenCalledOnce();
     expect(tracks[0].stop).not.toHaveBeenCalled();
-    expect(first.getByRole("button", { name: "Live scan" })).toBeInTheDocument();
+    expect(first.getByRole("button", { name: "Dừng phân tích" })).toBeInTheDocument();
     cleanup();
     expect(tracks[0].stop).toHaveBeenCalledOnce();
   });
@@ -95,54 +101,46 @@ describe("Frontend entry point", () => {
     expect(new Set(colors).size).toBe(classes.length);
   });
 
-  it("offers independent controls for objects, faces, and hand gestures", async () => {
+  it("offers only face recognition and Home Assistant controls", async () => {
     render(<MainPage />);
 
-    const objectToggle = await screen.findByLabelText("Enable object detection");
-    const faceToggle = screen.getByLabelText("Enable face recognition");
-    const gestureToggle = screen.getByLabelText("Enable hand gesture detection");
-    const homeToggle = screen.getByLabelText("Bật điều khiển nhà qua cử chỉ");
-    expect(objectToggle).toBeChecked();
+    const faceToggle = await screen.findByLabelText("Enable face recognition");
+    const homeToggle = screen.getByLabelText("Bật cảnh báo Home Assistant");
     expect(faceToggle).toBeChecked();
-    expect(gestureToggle).toBeChecked();
-    expect(homeToggle).not.toBeChecked();
+    expect(homeToggle).toBeChecked();
 
-    fireEvent.click(objectToggle);
     fireEvent.click(faceToggle);
-    fireEvent.click(gestureToggle);
-    expect(objectToggle).not.toBeChecked();
     expect(faceToggle).not.toBeChecked();
-    expect(gestureToggle).not.toBeChecked();
   });
 
-  it("shows a Home Assistant action notification for three seconds", async () => {
-    vi.stubGlobal("URL", {
-      ...URL,
-      createObjectURL: vi.fn(() => "blob:test-frame"),
-      revokeObjectURL: vi.fn(),
+  it("starts analysis automatically and shows a Home Assistant notification", async () => {
+    const track = { stop: vi.fn(), getSettings: () => ({ deviceId: "camera-1" }) };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        enumerateDevices: vi.fn().mockResolvedValue([{ kind: "videoinput", deviceId: "camera-1", label: "Test camera" }]),
+        getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track], getVideoTracks: () => [track] }),
+        addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      },
     });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 640 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 480 });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() });
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["frame"], { type: "image/jpeg" })));
     analyzeImage.mockResolvedValueOnce({
-      detections: [], faces: [], hands: [], warnings: [], processingMs: 10,
+      poses: [], faces: [], warnings: [], processingMs: 10,
       homeControl: {
         status: "executed",
-        action: "switch.turn_on",
-        entityId: "switch.t1_chieu_sang_switch_3",
+        event: "vision_guard_fall",
+        trackIds: [7],
       },
     });
     render(<MainPage />);
 
-    fireEvent.click(await screen.findByLabelText("Bật điều khiển nhà qua cử chỉ"));
-    const file = new File(["frame"], "frame.jpg", { type: "image/jpeg" });
-    fireEvent.change(screen.getByLabelText("Upload image"), { target: { files: [file] } });
-    vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Analyze frame" }));
-
-    await act(async () => {});
-    expect(screen.getByRole("status")).toHaveTextContent("switch.turn_on");
-    await act(() => vi.advanceTimersByTimeAsync(2999));
-    expect(screen.getByRole("status")).toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Start camera" }));
+    expect(await screen.findByRole("button", { name: "Dừng phân tích" })).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("vision_guard_fall");
   });
 
   it("opens identity enrollment and user management for an admin", async () => {
@@ -163,7 +161,9 @@ describe("Frontend entry point", () => {
     expect(window.location.hash).toBe("#/scan");
   });
 
-  it("disables frame analysis and camera selection during live scan", async () => {
+  it("starts live analysis automatically and allows it to be paused", async () => {
+    analyzeImage.mockResolvedValue({ poses: [], faces: [], warnings: [], processingMs: 10,
+      homeControl: { status: "idle" } });
     const track = { stop: vi.fn(), getSettings: () => ({ deviceId: "camera-1" }) };
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -185,11 +185,10 @@ describe("Frontend entry point", () => {
 
     render(<MainPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Start camera" }));
-    const liveButton = await screen.findByRole("button", { name: "Live scan" });
-    fireEvent.click(liveButton);
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stop live" })).toBeInTheDocument());
+    const liveButton = await screen.findByRole("button", { name: "Dừng phân tích" });
     expect(screen.getByLabelText("Chọn camera")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Analyz/ })).toBeDisabled();
+    fireEvent.click(liveButton);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Tiếp tục phân tích" })).toBeInTheDocument());
+    expect(screen.getByLabelText("Chọn camera")).not.toBeDisabled();
   });
 });

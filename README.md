@@ -1,715 +1,179 @@
 # Vision Guard
 
-Ứng dụng nhận diện người, khuôn mặt và vật thể gồm:
+Theo dõi tiến độ và công việc tiếp theo tại
+[`docs/WORKLOG.md`](docs/WORKLOG.md).
 
-- **Frontend:** React, JavaScript và Vite.
-- **Backend:** Python và FastAPI.
-- **Nhận diện vật thể:** YOLO-World (`yolov8s-worldv2.pt`).
-- **Phát hiện khuôn mặt:** OpenCV YuNet chạy bằng ONNX trên CPU.
-- **Nhận diện khuôn mặt:** OpenCV SFace chạy bằng ONNX trên CPU.
-- **Nhận diện cử chỉ tay:** MediaPipe Gesture Recognizer chạy bằng model offline.
-- **Theo dõi khuôn mặt:** tracker IoU tái sử dụng danh tính giữa các frame.
-- **Dữ liệu khuôn mặt:** lưu vector cục bộ dưới dạng JSON và ảnh đăng ký trong thư mục riêng.
+Vision Guard là ứng dụng giám sát chạy hoàn toàn trên **CPU**, chỉ tập trung vào hai nhiệm vụ:
 
-> **Lưu ý quan trọng:** dự án này chạy hoàn toàn bằng **CPU**, không sử dụng GPU
-> NVIDIA, CUDA hoặc cuDNN. Tốc độ phân tích trực tiếp sẽ phụ thuộc vào CPU và có
-> thể chậm hơn đáng kể so với máy có GPU.
+- phát hiện và xác nhận người bị ngã;
+- nhận diện khuôn mặt đã đăng ký.
 
-## 1. Chức năng
+Các chức năng nhận diện vật thể tùy ý, cử chỉ tay, khói thuốc và buồn ngủ đã được bỏ khỏi pipeline để giảm RAM, thời gian xử lý và số model phải nạp. Ứng dụng vẫn giữ đăng nhập, quản lý người dùng, đăng ký khuôn mặt, nhiều camera và kết nối Home Assistant.
 
-- Phát hiện người và các vật thể được nhập bằng văn bản với YOLO-World.
-- Tải ảnh lên hoặc lấy hình ảnh trực tiếp từ webcam.
-- Liệt kê và chuyển đổi giữa nhiều camera trên cùng thiết bị.
-- Phân tích một khung hình hoặc quét liên tục.
-- Đăng ký khuôn mặt mới trên trang Identity Enrollment riêng.
-- Trang Login là điểm vào mặc định; người dùng phải đăng nhập trước khi Scan.
-- Phân quyền `user` và `admin`; chỉ admin được đăng ký khuôn mặt và tạo tài khoản.
-- So khớp khuôn mặt với dữ liệu đã đăng ký.
-- Bật/tắt độc lập nhận diện vật thể, khuôn mặt và cử chỉ tay.
-- Nhận diện tối đa hai bàn tay cùng các cử chỉ dựng sẵn như `Open_Palm`,
-  `Closed_Fist`, `Thumb_Up`, `Thumb_Down`, `Victory`, `Pointing_Up` và `ILoveYou`.
-- Trả kết quả từ backend dưới dạng JSON và vẽ khung nhận diện trên frontend.
-- Lưu vector khuôn mặt trong `backend/data/faces.json` và ảnh đăng ký trong
-  `backend/data/people/<tên người>/`.
-- Lưu tài khoản và session trong SQLite `backend/data/users.db`; mật khẩu được
-  băm bằng Argon2id và không lưu dạng nguyên bản.
+## Cách giảm cảnh báo ngã sai
 
-## 2. Cấu trúc dự án
+Backend dùng YOLO Pose nano trên CPU và không kết luận ngã chỉ từ một khung hình. Mỗi người được theo dõi riêng bằng IoU, sau đó kết hợp ba tín hiệu hình học:
 
-```text
-Camera-Detection/
-├── frontend/
-│   ├── src/
-│   │   ├── main.jsx         Entry point và điều hướng giữa Scan/Enrollment
-│   │   ├── pages/           Logic cho trang Login, Scan và Enrollment
-│   │   ├── components/      Header, navigator, camera box, footer và sidebar
-│   │   ├── utils/           Tiện ích camera dùng chung
-│   │   ├── api.js           Gọi trực tiếp FastAPI
-│   │   └── styles.css
-│   ├── package.json
-│   └── .env.example
-├── backend/
-│   ├── app.py               Khởi chạy bằng python3 app.py
-│   ├── vision_app/
-│   │   ├── main.py          API FastAPI
-│   │   ├── auth.py          SQLite users, Argon2id và server-side sessions
-│   │   ├── detector.py      YOLO-World
-│   │   ├── faces.py         Đăng ký và nhận diện khuôn mặt
-│   │   ├── image_utils.py   Đọc và kiểm tra ảnh
-│   │   └── config.py        Cấu hình từ biến môi trường
-│   ├── models/              Model YuNet, SFace và MediaPipe Gesture Recognizer
-│   ├── download_models.py   Tải model chính thức từ OpenCV Zoo
-│   ├── data/                Nơi lưu faces.json và ảnh people/<tên người>/
-│   ├── tests/
-│   ├── requirements.txt
-│   ├── requirements-dev.txt
-│   └── .env.example
-├── package.json             Lệnh chạy toàn bộ dự án
-└── README.md
-```
+- tỷ lệ chiều rộng/chiều cao của khung người;
+- góc thân trên giữa vai và hông;
+- khoảng cách dọc giữa đầu và hông.
 
-Trong chế độ development, frontend gọi trực tiếp backend tại
-`http://localhost:8000`. Không có Node API gateway. Hướng dẫn Docker portable
-nằm trong `docker_camera_detection/README.md`.
+Ít nhất hai tín hiệu phải đồng thuận. Trạng thái chỉ chuyển thành `confirmed` sau `FALL_CONFIRM_FRAMES` khung liên tiếp; trạng thái cảnh báo được xóa sau `FALL_RECOVERY_FRAMES` khung đứng bình thường. Ảnh tải lên không có chuỗi thời gian nên chỉ trả `suspected`, không gửi cảnh báo Home Assistant.
 
-## 3. Yêu cầu hệ thống
+Đây là hệ thống hỗ trợ giám sát, không phải thiết bị y tế. Cần hiệu chỉnh bằng video thật tại đúng vị trí lắp camera trước khi sử dụng để báo động.
 
-Khuyến nghị:
+## Kiến trúc
 
-- Ubuntu/Debian 64-bit hoặc hệ điều hành Linux tương đương.
-- Python 3.10–3.12; Python 3.11 được khuyến nghị.
-- Node.js 22 trở lên và npm.
-- RAM tối thiểu 4 GB; khuyến nghị 8 GB trở lên.
-- Khoảng 3 GB dung lượng trống cho thư viện Python và model.
-- CPU hỗ trợ 64-bit; CPU nhiều nhân sẽ cho tốc độ tốt hơn.
-- Webcam là tùy chọn nếu chỉ phân tích ảnh tải lên.
-- Có Internet trong lần cài đặt và lần tải model đầu tiên.
+- Frontend: React + Vite.
+- API: FastAPI.
+- Pose/fall: YOLO pose nano, PyTorch CPU.
+- Khuôn mặt: OpenCV YuNet + SFace ONNX trên CPU.
+- Lưu trữ: JSON cho vector khuôn mặt, SQLite cho tài khoản/session.
+- Home Assistant: REST event `vision_guard_fall`.
 
-Kiểm tra phiên bản đang có:
+## Yêu cầu
+
+- Linux 64-bit, Python 3.10–3.12 và Node.js 22+.
+- RAM tối thiểu 4 GB, khuyến nghị 8 GB.
+- CPU 64-bit nhiều nhân; không cần NVIDIA, CUDA hay cuDNN.
+- Internet chỉ cần khi cài thư viện và tải model lần đầu.
+
+## Cài đặt
 
 ```bash
-python3 --version
-node --version
-npm --version
-```
-
-## 4. Cài thư viện hệ thống trên Ubuntu/Debian
-
-Backend dùng OpenCV ONNX nên không cần biên dịch `dlib`. Cài các gói Python,
-Git và thư viện runtime OpenCV:
-
-```bash
-sudo apt update
-sudo apt install -y \
-  python3 \
-  python3-venv \
-  python3-dev \
-  python3-pip \
-  git \
-  libgl1 \
-  libglib2.0-0
-```
-
-Nếu chưa có Node.js, hãy cài một phiên bản LTS còn được hỗ trợ từ trang chính
-thức của Node.js. Sau khi cài, xác nhận `node --version` và `npm --version` hoạt
-động trước khi tiếp tục.
-
-## 5. Cài frontend
-
-Tại thư mục gốc của dự án:
-
-```bash
-cd /home/dq/Camera-Detection
-
-# Cài concurrently dùng để chạy frontend và backend cùng lúc
-npm install
-
-# Cài React, Vite và các thư viện frontend
-npm run install:all
-```
-
-Lệnh tương đương nếu chỉ muốn cài frontend:
-
-```bash
-npm install --prefix frontend
-```
-
-## 6. Cài backend chạy CPU, không dùng NVIDIA
-
-### 6.1. Tạo môi trường Python riêng
-
-```bash
-cd /home/dq/Camera-Detection
+cd /home/daikai/Camera-DetectionV2
 python3 -m venv backend/.venv
 source backend/.venv/bin/activate
 python -m pip install --upgrade pip wheel
-```
 
-Khi môi trường được kích hoạt, đầu dòng lệnh thường xuất hiện `(.venv)`.
-
-### 6.2. Cài PyTorch bản CPU
-
-Phải cài PyTorch bản CPU trước khi cài Ultralytics:
-
-```bash
+# Bắt buộc cài wheel CPU trước Ultralytics
 python -m pip install torch torchvision \
   --index-url https://download.pytorch.org/whl/cpu
-```
-
-Lệnh trên dùng kho wheel CPU chính thức của PyTorch, không cài CUDA và không yêu
-cầu card NVIDIA.
-
-### 6.3. Cài FastAPI, YOLO-World và nhận diện khuôn mặt
-
-```bash
 python -m pip install -r backend/requirements-dev.txt
+
+npm install
+npm run install:all
 ```
 
-Lệnh này cài OpenCV, FastAPI và Ultralytics CLIP. Không còn cài `dlib`,
-`face-recognition`, `face-recognition-models` hoặc phiên bản Setuptools cũ.
-
-### 6.4. Kiểm tra các thư viện
+Tải các model cần thiết:
 
 ```bash
-python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA:', torch.cuda.is_available())"
-python -c "import fastapi, cv2, ultralytics; print('YuNet:', hasattr(cv2, 'FaceDetectorYN')); print('SFace:', hasattr(cv2, 'FaceRecognizerSF'))"
+backend/.venv/bin/python backend/download_models.py
+backend/.venv/bin/python backend/download_pose_model.py
 ```
 
-Kết quả đúng cho dự án này phải có:
-
-```text
-CUDA: False
-YuNet: True
-SFace: True
-```
-
-Nếu `CUDA` là `True`, hãy gỡ PyTorch hiện tại rồi cài lại bản CPU:
+Xác nhận không dùng CUDA:
 
 ```bash
-python -m pip uninstall -y torch torchvision torchaudio
-python -m pip install torch torchvision \
-  --index-url https://download.pytorch.org/whl/cpu
+backend/.venv/bin/python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-## 7. Cấu hình backend
+Kết quả phải là `False`.
 
-Tạo file cấu hình từ file mẫu:
+## Cấu hình
 
 ```bash
-cd /home/dq/Camera-Detection
 cp backend/.env.example backend/.env
 chmod 600 backend/.env
 ```
 
-Mở `backend/.env` và đặt mật khẩu mạnh cho admin đầu tiên. Không đặt mật khẩu
-thật trong `.env.example` và không commit file `.env`:
+Các biến chính:
 
-```env
-YOLO_MODEL=models/yolov8s-worldv2.pt
-YOLO_DEVICE=cpu
-DETECTION_CONFIDENCE=0.30
-FACE_STORE=data/faces.json
-FACE_PHOTO_DIR=data/people
-YUNET_MODEL=models/face_detection_yunet_2023mar.onnx
-SFACE_MODEL=models/face_recognition_sface_2021dec.onnx
-YUNET_SCORE_THRESHOLD=0.80
-FACE_SIMILARITY_THRESHOLD=0.40
-FACE_RECOGNITION_INTERVAL=8
-TRACK_IOU_THRESHOLD=0.25
-TRACK_MAX_MISSED=3
-GESTURE_MODEL=models/gesture_recognizer.task
-GESTURE_MIN_CONFIDENCE=0.55
-GESTURE_NUM_HANDS=2
-MAX_UPLOAD_BYTES=10485760
-BACKEND_HOST=127.0.0.1
-BACKEND_PORT=8000
-BACKEND_RELOAD=true
-AUTH_DATABASE=data/users.db
-AUTH_SESSION_HOURS=12
-AUTH_COOKIE_NAME=camera_session
-AUTH_COOKIE_SECURE=false
-INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD=MAT_KHAU_MANH_TOI_THIEU_12_KY_TU
-```
+| Biến | Mặc định | Ý nghĩa |
+|---|---:|---|
+| `POSE_MODEL` | `models/yolo26n-pose.pt` | Model pose nano |
+| `POSE_IMAGE_SIZE` | `512` | Kích thước suy luận; giảm xuống 416 nếu CPU yếu |
+| `POSE_CONFIDENCE` | `0.45` | Ngưỡng người; tăng nếu có nhiều nhận diện giả |
+| `FALL_CONFIRM_SECONDS` | `1.5` | Thời gian nghi ngã liên tục trước khi cảnh báo |
+| `FALL_RECOVERY_SECONDS` | `1.0` | Thời gian bình thường liên tục để xóa trạng thái ngã |
+| `FALL_MAX_FRAME_GAP_SECONDS` | `1.0` | Khoảng mất dấu tối đa trước khi đặt lại tiến trình xác nhận |
+| `FALL_BBOX_RATIO` | `1.15` | Ngưỡng khung người nằm ngang |
+| `FALL_TORSO_ANGLE` | `35` | Góc thân tối đa so với phương ngang |
+| `FACE_RECOGNITION_INTERVAL` | `8` | Chu kỳ chạy lại SFace cho một track |
+| `HA_URL` | trống | URL Home Assistant, ví dụ `http://homeassistant.local:8123` |
+| `HA_TOKEN` | trống | Long-Lived Access Token |
+| `HA_FALL_EVENT` | `vision_guard_fall` | Tên event gửi vào Home Assistant |
+| `HA_ALERT_COOLDOWN_SECONDS` | `60` | Chống gửi cảnh báo lặp |
 
-`AUTH_COOKIE_SECURE=false` chỉ dành cho development bằng
-`http://localhost`. Khi triển khai qua domain/HTTPS, phải đổi thành `true`.
-Admin ban đầu chỉ được tạo khi database chưa có tài khoản. Sau lần tạo đầu tiên,
-đổi `INITIAL_ADMIN_PASSWORD` không đổi mật khẩu trong database.
+`INITIAL_ADMIN_PASSWORD` phải có ít nhất 12 ký tự khi khởi tạo database lần đầu.
 
-| Biến | Ý nghĩa |
-|---|---|
-| `YOLO_MODEL` | Tên hoặc đường dẫn đến file model YOLO-World |
-| `DETECTION_CONFIDENCE` | Ngưỡng tin cậy tối thiểu của vật thể |
-| `FACE_STORE` | File JSON lưu vector khuôn mặt |
-| `FACE_PHOTO_DIR` | Thư mục lưu ảnh đăng ký, phân theo tên người |
-| `YUNET_MODEL` | Đường dẫn model ONNX phát hiện khuôn mặt |
-| `SFACE_MODEL` | Đường dẫn model ONNX tạo embedding khuôn mặt |
-| `YUNET_SCORE_THRESHOLD` | Ngưỡng tin cậy phát hiện khuôn mặt |
-| `FACE_SIMILARITY_THRESHOLD` | Ngưỡng cosine nhận diện; cao hơn nghiêm ngặt hơn |
-| `FACE_RECOGNITION_INTERVAL` | Số frame tracker chờ trước khi chạy lại SFace |
-| `TRACK_IOU_THRESHOLD` | IoU tối thiểu để nối khuôn mặt với track cũ |
-| `TRACK_MAX_MISSED` | Số frame mất dấu trước khi xóa track |
-| `GESTURE_MODEL` | Đường dẫn model MediaPipe Gesture Recognizer |
-| `GESTURE_MIN_CONFIDENCE` | Ngưỡng nhận diện bàn tay và phân loại cử chỉ |
-| `GESTURE_NUM_HANDS` | Số bàn tay tối đa được nhận diện trong một frame |
-| `MAX_UPLOAD_BYTES` | Kích thước ảnh tải lên tối đa, mặc định 10 MB |
-| `BACKEND_HOST` | Địa chỉ backend lắng nghe, mặc định chỉ trên máy hiện tại |
-| `BACKEND_PORT` | Cổng backend, mặc định `8000` |
-| `BACKEND_RELOAD` | Tự khởi động lại khi sửa code trong môi trường phát triển |
-| `AUTH_DATABASE` | SQLite lưu tài khoản và session, mặc định `data/users.db` |
-| `AUTH_SESSION_HOURS` | Thời hạn đăng nhập, mặc định 12 giờ |
-| `AUTH_COOKIE_NAME` | Tên session cookie; development dùng `camera_session` |
-| `AUTH_COOKIE_SECURE` | `false` cho localhost HTTP; `true` cho production HTTPS |
-| `INITIAL_ADMIN_USERNAME` | Tên admin được tạo khi database còn trống |
-| `INITIAL_ADMIN_PASSWORD` | Mật khẩu admin đầu tiên, tối thiểu 12 ký tự |
-
-## 8. Tải các model
-
-### 8.1. YuNet và SFace
-
-Hai model ONNX phải tồn tại trước khi nhận diện khuôn mặt. Tải từ OpenCV Zoo:
+## Chạy ứng dụng
 
 ```bash
-cd /home/dq/Camera-Detection/backend
-.venv/bin/python download_models.py
+npm run dev
 ```
 
-Kết quả:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8090`
+- API docs: `http://localhost:8090/docs`
+
+Để xác nhận ngã theo thời gian, mở camera và dùng **Live scan**. Khi chỉ phân tích một ảnh, backend cố ý không phát cảnh báo khẩn cấp.
+
+## Home Assistant
+
+Khi một track chuyển sang ngã đã xác nhận, backend gọi:
 
 ```text
-backend/models/face_detection_yunet_2023mar.onnx
-backend/models/face_recognition_sface_2021dec.onnx
+POST /api/events/vision_guard_fall
 ```
 
-### 8.2. YOLO-World
-
-Backend sử dụng model:
-
-```text
-yolov8s-worldv2.pt
-```
-
-Không bắt buộc tải thủ công. Trong lần phân tích ảnh đầu tiên, Ultralytics sẽ tự
-tải model nếu file chưa tồn tại. Muốn tải trước, chạy:
-
-```bash
-cd /home/dq/Camera-Detection/backend
-source .venv/bin/activate
-python -c "from ultralytics import YOLOWorld; YOLOWorld('models/yolov8s-worldv2.pt'); print('Model ready')"
-```
-
-Sau khi hoàn thành, file thường nằm tại:
-
-```text
-backend/models/yolov8s-worldv2.pt
-```
-
-Sau khi model đã được tải, chức năng nhận diện có thể chạy mà không cần Internet.
-
-## 9. Chạy backend và frontend riêng biệt
-
-### Terminal 1 — Backend
-
-```bash
-cd /home/dq/Camera-Detection/backend
-python3 app.py
-```
-
-`app.py` tự chuyển sang Python trong `backend/.venv`, nên không bắt buộc chạy
-`source .venv/bin/activate` trước. Backend đọc cấu hình từ `backend/.env`.
-
-Địa chỉ backend:
-
-- Kiểm tra trạng thái: <http://localhost:8000/health>
-- Tài liệu API Swagger: <http://localhost:8000/docs>
-
-Kết quả `/health` khi backend hoạt động:
+Payload mẫu:
 
 ```json
 {
-  "status": "ok",
-  "modelLoaded": false
+  "source": "vision_guard",
+  "camera_id": "camera-session-id",
+  "track_ids": [3],
+  "status": "confirmed"
 }
 ```
 
-`modelLoaded: false` trước lần phân tích đầu tiên là bình thường.
+Automation mẫu:
 
-### Terminal 2 — Frontend
+```yaml
+alias: Vision Guard - cảnh báo ngã
+trigger:
+  - platform: event
+    event_type: vision_guard_fall
+action:
+  - service: notify.notify
+    data:
+      title: "Cảnh báo ngã"
+      message: "Vision Guard phát hiện một người có thể đã bị ngã."
+mode: single
+```
 
-Tạo file môi trường frontend trong lần đầu:
+Mỗi track chỉ phát event một lần cho đến khi người đó trở lại trạng thái bình thường. Cooldown toàn camera cung cấp thêm một lớp chống lặp.
+
+## API phân tích
+
+`POST /analyze` dùng `multipart/form-data`:
+
+- `image`: ảnh JPEG/PNG;
+- `recognize_faces`: bật/tắt nhận diện khuôn mặt;
+- `notify_home`: bật/tắt gửi sự kiện Home Assistant;
+- `tracking_id`: ID ổn định cho từng camera; bắt buộc để xác nhận theo chuỗi frame.
+
+Các trường trả về quan trọng:
+
+- `poses[].fall.status`: `upright`, `suspected` hoặc `confirmed`;
+- `poses[].fall.alert`: chỉ `true` khi đã xác nhận theo thời gian;
+- `faces`: khuôn mặt và danh tính;
+- `homeControl`: trạng thái gửi event Home Assistant;
+- `processingMs`: thời gian xử lý.
+
+## Tối ưu CPU
+
+- Dùng một camera trước, sau đó tăng dần và theo dõi `processingMs`.
+- Giữ `POSE_IMAGE_SIZE=512`; CPU yếu có thể dùng 416, đổi lại người ở xa kém chính xác hơn.
+- Frontend đã giới hạn frame gửi lên tối đa 960 px và không gửi frame mới khi request trước chưa xong.
+- SFace chỉ chạy lại theo chu kỳ và tái sử dụng danh tính qua tracker.
+- Không giảm `FALL_CONFIRM_SECONDS` khi chưa đánh giá trên video thực vì dễ tăng cảnh báo sai.
+- Đặt camera cao, nhìn chéo, hạn chế che khuất toàn thân và tránh góc quá sát sàn.
+
+## Kiểm thử
 
 ```bash
-cd /home/dq/Camera-Detection
-cp frontend/.env.example frontend/.env
+backend/.venv/bin/python -m pytest backend/tests
+npm test --prefix frontend -- --run
 ```
-
-Nội dung phải là:
-
-```env
-VITE_API_URL=http://localhost:8000
-```
-
-Sau đó chạy:
-
-```bash
-cd /home/dq/Camera-Detection/frontend
-npm ci
-npm run dev
-```
-
-Mở trình duyệt tại:
-
-```text
-http://localhost:5173
-```
-
-Trang Login sẽ xuất hiện trước. Đăng nhập bằng:
-
-```text
-Username: admin
-Password: giá trị INITIAL_ADMIN_PASSWORD trong backend/.env
-```
-
-Sau khi đăng nhập bằng admin, mở **Identity enrollment → User management** để
-tạo tài khoản `user` hoặc `admin`. Tài khoản `user` chỉ được Scan; tài khoản
-`admin` được Scan, đăng ký khuôn mặt và tạo người dùng mới.
-
-Trình duyệt sẽ yêu cầu quyền sử dụng camera. Nếu không cấp quyền, chức năng tải
-ảnh lên vẫn hoạt động. Sau khi cấp quyền và mở camera lần đầu, dùng danh sách
-**Camera mặc định** bên dưới khung hình để chọn webcam khác. Tên thiết bị chỉ có
-thể xuất hiện sau khi trình duyệt đã được cấp quyền camera.
-
-## 10. Chạy toàn bộ dự án bằng một lệnh
-
-Sau khi đã tạo `backend/.env`, `frontend/.env` và cài dependencies, chạy từ thư
-mục gốc:
-
-```bash
-cd /home/dq/Camera-Detection
-npm run dev
-```
-
-Lệnh này chạy đồng thời:
-
-- Frontend tại `http://localhost:5173`.
-- Backend tại `http://localhost:8000`.
-
-Dừng cả hai bằng `Ctrl+C`.
-
-## 11. Chạy trên máy khác trong cùng mạng LAN
-
-Không dùng Vite development server và HTTP thô để triển khai cho máy khác.
-Trình duyệt chỉ cho phép camera trên `localhost` hoặc HTTPS; đồng thời production
-phải dùng session cookie `Secure`.
-
-### Build và chạy bằng Docker Compose
-
-Sau mỗi lần cập nhật hoặc chỉnh sửa source code, chạy:
-
-```bash
-cd /home/dq/Camera-Detection/docker_camera_detection
-docker compose up -d --build
-```
-
-Lệnh này tự build image `camera-detection:1.1.0-cpu`, sau đó tạo lại và chạy
-container ở chế độ nền. Không cần chạy riêng `docker build`.
-
-Nếu đang đứng tại thư mục gốc của dự án, dùng lệnh tương đương:
-
-```bash
-docker compose -f docker_camera_detection/docker-compose.yml up -d --build
-```
-
-Kiểm tra trạng thái và log:
-
-```bash
-cd /home/dq/Camera-Detection/docker_camera_detection
-docker compose ps
-docker compose logs -f camera-detection
-```
-
-Dữ liệu tài khoản và khuôn mặt nằm trong volume `camera-detection-data`, vì vậy
-vẫn được giữ lại khi container được build lại. Không thêm tùy chọn `-v` vào lệnh
-`docker compose down` trừ khi muốn xóa toàn bộ dữ liệu này.
-
-Để truy cập từ PC khác, đặt Caddy hoặc Apache2 HTTPS phía trước container. Xem
-hướng dẫn triển khai và xuất image sang máy khác tại:
-
-```text
-docker_camera_detection/README.md
-```
-
-Không public trực tiếp cổng backend `8000` hoặc container `8080`.
-
-## 12. API backend
-
-| Phương thức | Endpoint | Chức năng |
-|---|---|---|
-| `GET` | `/health` | Kiểm tra backend và trạng thái model |
-| `GET` | `/auth/status` | Kiểm tra hệ thống đã có admin hay chưa |
-| `POST` | `/auth/login` | Đăng nhập và nhận session cookie `HttpOnly` |
-| `POST` | `/auth/logout` | Xóa session hiện tại |
-| `GET` | `/auth/me` | Thông tin tài khoản đang đăng nhập |
-| `GET` | `/users` | Danh sách tài khoản — chỉ admin |
-| `POST` | `/users` | Tạo tài khoản `user/admin` — chỉ admin |
-| `GET` | `/faces` | Danh sách tên đã đăng ký — chỉ admin |
-| `POST` | `/analyze` | Phân tích ảnh — mọi tài khoản đã đăng nhập |
-| `POST` | `/faces/enroll` | Đăng ký khuôn mặt — chỉ admin |
-
-Ngoại trừ `/health`, `/auth/status` và `/auth/login`, API yêu cầu session cookie.
-Ví dụ đăng nhập bằng `curl` và lưu cookie tạm thời:
-
-```bash
-curl -c /tmp/camera-cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"MAT_KHAU_ADMIN"}' \
-  http://localhost:8000/auth/login
-```
-
-`POST /analyze` sử dụng `multipart/form-data`:
-
-- `image`: file ảnh.
-- `classes`: danh sách vật thể, phân tách bằng dấu phẩy.
-- `recognize_faces`: `true` hoặc `false`.
-- `detect_objects`: `true` hoặc `false`.
-- `detect_gestures`: `true` hoặc `false`.
-- `tracking_id`: mã phiên camera; bỏ trống đối với ảnh upload.
-
-Ví dụ:
-
-```bash
-curl -b /tmp/camera-cookies.txt \
-  -X POST http://localhost:8000/analyze \
-  -F "image=@/duong-dan/anh.jpg" \
-  -F "classes=person,car,backpack,cell phone" \
-  -F "recognize_faces=true"
-```
-
-## 13. Chạy kiểm thử
-
-```bash
-cd /home/dq/Camera-Detection
-source backend/.venv/bin/activate
-npm test
-```
-
-Hoặc chạy riêng:
-
-```bash
-npm --prefix frontend test
-```
-
-```bash
-cd /home/dq/Camera-Detection/backend
-source .venv/bin/activate
-python -m pytest
-```
-
-Các bài kiểm thử backend không tải model YOLO. Chỉ khi phân tích ảnh thật thì
-model mới được nạp.
-
-## 14. Xử lý lỗi thường gặp
-
-### Login báo chưa có administrator
-
-Kiểm tra `backend/.env` có mật khẩu admin tối thiểu 12 ký tự:
-
-```env
-INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD=MAT_KHAU_MANH_TOI_THIEU_12_KY_TU
-```
-
-Dừng hoàn toàn backend bằng `Ctrl+C`, sau đó chạy lại:
-
-```bash
-cd /home/dq/Camera-Detection/backend
-python3 app.py
-```
-
-Kiểm tra trạng thái:
-
-```bash
-curl http://localhost:8000/auth/status
-```
-
-Nếu trả về `{"setupRequired":false}`, admin đã được tạo. Database development
-nằm tại `backend/data/users.db`.
-
-### Đăng nhập đúng nhưng lại quay về Login
-
-Khi dùng `http://localhost:5173`, kiểm tra:
-
-```env
-AUTH_COOKIE_NAME=camera_session
-AUTH_COOKIE_SECURE=false
-```
-
-Frontend phải được mở đúng bằng `http://localhost:5173`, và `frontend/.env` phải
-trỏ tới `http://localhost:8000`. Sau khi thay `.env`, khởi động lại cả backend và
-Vite. Production qua HTTPS phải đổi `AUTH_COOKIE_SECURE=true`.
-
-### `node: command not found`
-
-Cài Node.js LTS, sau đó mở terminal mới và kiểm tra:
-
-```bash
-node --version
-npm --version
-```
-
-### `ModuleNotFoundError`
-
-Môi trường Python chưa được kích hoạt hoặc chưa cài requirements:
-
-```bash
-cd /home/dq/Camera-Detection
-source backend/.venv/bin/activate
-python -m pip install -r backend/requirements-dev.txt
-```
-
-### `externally-managed-environment` hoặc lỗi PEP 668
-
-Lỗi này xảy ra khi `pip` đang cố cài package vào Python hệ thống thay vì
-`backend/.venv`. Không sử dụng `sudo pip` và không thêm
-`--break-system-packages`.
-
-Cài lại đúng vào môi trường riêng:
-
-```bash
-cd /home/dq/Camera-Detection
-sudo apt install -y python3-venv python3-full git
-python3 -m venv backend/.venv
-
-backend/.venv/bin/python -m pip install --upgrade pip wheel
-backend/.venv/bin/python -m pip install torch torchvision \
-  --index-url https://download.pytorch.org/whl/cpu
-backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
-```
-
-Sau đó chạy:
-
-```bash
-cd /home/dq/Camera-Detection/backend
-python3 app.py
-```
-
-`backend/app.py` sẽ tự chuyển sang Python trong `.venv` nếu bạn quên kích hoạt
-môi trường.
-
-### YOLO-World báo thiếu Ultralytics CLIP
-
-Đảm bảo máy có `git`, sau đó cài CLIP bằng chính Python trong `.venv`:
-
-```bash
-sudo apt install -y git
-cd /home/dq/Camera-Detection
-backend/.venv/bin/python -m pip install \
-  "git+https://github.com/ultralytics/CLIP.git"
-```
-
-Kiểm tra:
-
-```bash
-backend/.venv/bin/python -c "import clip; print('Ultralytics CLIP: OK')"
-```
-
-### Thiếu model YuNet hoặc SFace
-
-Nếu API báo `Thiếu model ONNX`, chạy:
-
-```bash
-cd /home/dq/Camera-Detection/backend
-.venv/bin/python download_models.py
-```
-
-Hai file phải có kích thước khoảng 228 KB và 37 MB; file vài byte thường chỉ là
-Git LFS pointer và không phải model thật.
-
-### Lần nhận diện đầu tiên rất chậm
-
-Đây là hành vi bình thường vì model YOLO-World được tải và nạp vào RAM lần đầu.
-Các lần sau sẽ nhanh hơn. Vì dự án chạy CPU, mỗi khung hình có thể cần nhiều thời
-gian hơn máy dùng GPU.
-
-### Không mở được camera
-
-- Cho phép quyền camera trong trình duyệt.
-- Khi phát triển, sử dụng `http://localhost:5173`.
-- Khi truy cập qua mạng hoặc triển khai thật, sử dụng HTTPS.
-- Đóng các ứng dụng khác đang chiếm webcam.
-
-### Frontend báo backend không khả dụng
-
-Kiểm tra:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Nếu lệnh không trả JSON, hãy khởi động lại backend và xem lỗi trong Terminal 1.
-
-## 15. Dữ liệu khuôn mặt và quyền riêng tư
-
-Nhận diện khuôn mặt là xử lý dữ liệu sinh trắc học. Chỉ đăng ký người đã đồng ý,
-giới hạn quyền truy cập API, quy định thời gian lưu dữ liệu và tuân thủ pháp luật
-tại nơi triển khai.
-
-Ứng dụng đã có đăng nhập, Argon2id, session cookie và phân quyền `user/admin`.
-Trước khi thương mại hóa vẫn cần HTTPS, mã hóa/sao lưu dữ liệu, giới hạn tần
-suất đăng nhập và phân tích, nhật ký truy cập, đổi/reset mật khẩu, vô hiệu hóa tài
-khoản và API xóa đăng ký. Không sử dụng kết quả nhận diện làm căn cứ duy nhất cho
-quyết định có ảnh hưởng lớn đến con người.
-
-## Tài liệu chính thức
-
-- [Cài đặt PyTorch và lựa chọn nền tảng CPU](https://pytorch.org/get-started/locally/)
-- [Hướng dẫn cài đặt Ultralytics](https://docs.ultralytics.com/quickstart/)
-- [Tài liệu YOLO-World](https://docs.ultralytics.com/models/yolo-world/)
-- [Tải Node.js](https://nodejs.org/en/download)
-
-## Body pose detection (stage 1)
-
-YOLO26n-pose detects people and 17 body keypoints on CPU. This stage shows
-skeletons only; it does not classify falls or send fall alerts.
-
-```bash
-backend/.venv/bin/python -m pip install -r backend/requirements.txt
-backend/.venv/bin/python backend/download_pose_model.py
-```
-
-Restart the backend, open Scan, enable **Body pose**, then use **Analyze frame**
-or **Live scan**. The setting is independent for each camera. Disable other
-recognition features when measuring pose performance on CPU.
-
-The checkpoint is stored in `backend/models/yolo26n-pose.pt` (excluded from Git).
-`POSE_MODEL` can override its path. The `/analyze` form accepts `detect_poses`
-(default false) and returns `poses`, with normalized boxes and 17 named keypoints
-including confidence values. Missing models produce a warning without preventing
-other recognition features. Model source: https://docs.ultralytics.com/tasks/pose/
-
-## Theo dõi trạng thái mắt (thử nghiệm)
-
-Chạy `backend/.venv/bin/python backend/download_drowsiness_model.py` để tải
-Face Landmarker chính thức của Google vào `backend/models/face_landmarker.task`.
-Bật **Theo dõi buồn ngủ** và **Live scan** ở camera hướng vào mặt tài xế.
-Bộ đếm riêng theo tài khoản/camera cảnh báo nghi buồn ngủ sau 2 giây nhắm cả
-hai mắt liên tục. Có thể chỉnh `DROWSINESS_CLOSED_SECONDS` và `FACE_LANDMARKER_MODEL`.
-Điểm eyeBlink là hệ số biểu cảm, không phải xác suất buồn ngủ; ngưỡng 0.6/0.35
-là ngưỡng thử nghiệm cần hiệu chỉnh với người dùng và điều kiện camera.
-
-Khoảng lấy mẫu quá 1 giây, nhiều mặt, mặt quá nhỏ, lệch mạnh hoặc trạng thái
-mắt không rõ sẽ ngắt bộ đếm. Ảnh đơn không tích lũy thời gian. Khi CPU bận,
-hãy tắt các chức năng nhận diện khác để tăng tần suất phân tích.
-Bản này chỉ cảnh báo bằng giao diện, chưa có âm thanh, PERCLOS hay nhận diện ngáp.
-Không sử dụng làm hệ thống an toàn duy nhất khi lái xe; kiểm thử khi xe đứng yên.
-Kính tối màu và che khuất vẫn có thể gây dự đoán sai dù có kiểm tra chất lượng.
-
-## Phát hiện khói thuốc (thử nghiệm)
-
-`backend/models/smoking-detection.pt` là checkpoint YOLO đã tải từ model
-Apache-2.0 [basant18/Smoking-detection-YOLO26s](https://huggingface.co/basant18/Smoking-detection-YOLO26s).
-Kiểm tra checkpoint cho thấy class thực tế là `smoke`; do đó giao diện chỉ báo
-vùng khói, không khẳng định một người đang hút thuốc. Bật **Phát hiện khói thuốc**
-trên từng camera để chạy detector này. Dùng `SMOKING_MODEL` và
-`SMOKING_CONFIDENCE` (mặc định `0.50`) để đổi checkpoint hoặc ngưỡng.

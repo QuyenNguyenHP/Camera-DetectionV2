@@ -16,13 +16,9 @@ command -v docker >/dev/null 2>&1 || {
 }
 
 for REQUIRED_FILE in \
-  "$PROJECT_DIR/backend/models/yolov8s-worldv2.pt" \
   "$PROJECT_DIR/backend/models/face_detection_yunet_2023mar.onnx" \
   "$PROJECT_DIR/backend/models/face_recognition_sface_2021dec.onnx" \
-  "$PROJECT_DIR/backend/models/gesture_recognizer.task" \
-  "$PROJECT_DIR/backend/models/yolo26n-pose.pt" \
-  "$PROJECT_DIR/backend/models/face_landmarker.task" \
-  "$PROJECT_DIR/backend/models/smoking-detection.pt"
+  "$PROJECT_DIR/backend/models/yolo26n-pose.pt"
 do
   if [ ! -f "$REQUIRED_FILE" ]; then
     echo "Required model is missing: $REQUIRED_FILE" >&2
@@ -41,27 +37,19 @@ echo "Validating Python libraries and packaged model files..."
 docker run --rm "$IMAGE_NAME:$IMAGE_VERSION" python -c "\
 from importlib import metadata; \
 from pathlib import Path; \
-import cv2, torch, ultralytics, clip, mediapipe; \
-from vision_app.detector import detector; \
+import cv2, torch, ultralytics; \
 from vision_app.faces import face_store; \
-from vision_app.gestures import gesture_detector; \
 from vision_app.poses import pose_detector; \
-from vision_app.drowsiness import drowsiness_detector; \
-from vision_app.smoking import smoking_detector; \
-required = [Path('models/yolov8s-worldv2.pt'), Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx'), Path('models/gesture_recognizer.task'), Path('models/yolo26n-pose.pt'), Path('models/face_landmarker.task'), Path('models/smoking-detection.pt')]; \
+required = [Path('models/face_detection_yunet_2023mar.onnx'), Path('models/face_recognition_sface_2021dec.onnx'), Path('models/yolo26n-pose.pt')]; \
 assert all(path.is_file() and path.stat().st_size > 0 for path in required); \
 cuda_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('nvidia-')); \
 triton_packages = sorted(dist.metadata['Name'] for dist in metadata.distributions() if (dist.metadata['Name'] or '').lower().startswith('triton')); \
 assert torch.version.cuda is None, f'CUDA-enabled PyTorch detected: {torch.version.cuda}'; \
 assert not cuda_packages, f'CUDA packages detected: {cuda_packages}'; \
 assert not triton_packages, f'Triton packages detected: {triton_packages}'; \
-detector._load(); \
 face_store._load_models(); \
-gesture_detector._load(); \
 pose_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
-drowsiness_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
-smoking_detector.detect(__import__('numpy').zeros((64, 64, 3), dtype=__import__('numpy').uint8)); \
-print(f'CPU-only libraries and all packaged YOLO/MediaPipe models loaded successfully (torch={torch.__version__})')"
+print(f'CPU-only fall and face models loaded successfully (torch={torch.__version__})')"
 
 docker rm -f "$VALIDATION_CONTAINER" >/dev/null 2>&1 || true
 cleanup_validation() {
